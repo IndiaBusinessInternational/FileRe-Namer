@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>IBI File Re-Namer v3.0</title>
+
+    <!-- Favicon: IBI text in cyan on black background, Roboto font -->
+    <link rel="icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23000000'/%3E%3Ctext x='50%25' y='50%25' font-family='Roboto, Arial, sans-serif' font-size='22' font-weight='900' fill='%2300c5ff' dominant-baseline='central' text-anchor='middle'%3EIBI%3C/text%3E%3C/svg%3E" type="image/svg+xml">
+
+    <!-- Roboto font (all weights) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- PDF.js for PDF text extraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <style>
+        /* ========== ROOT VARIABLES ========== */
+        :root {
+            --bg-body: #f4f5f7;
+            --bg-card: #ffffff;
+            --bg-input: #f9fafb;
+            --bg-soft: #f1f5f9;
+            --text-main: #1a1a1a;
+            --text-muted: #6b7280;
+            --text-soft: #9ca3af;
+            --border-color: #e5e7eb;
+            --border-strong: #d1d5db;
+            --accent-color: #00c5ff;
+            --accent-hover: #00a8db;
+            --accent-soft: rgba(0, 197, 255, 0.1);
+            --header-bg: #000000;
+            --header-text: #ffffff;
+            --btn-primary: #00c5ff;
+            --btn-primary-hover: #00a8db;
+            --btn-primary-text: #000000;
+            --btn-success: #10b981;
+            --btn-success-hover: #059669;
+            --btn-danger: #ef4444;
+            --btn-danger-hover: #dc2626;
+            --btn-secondary: #6b7280;
+            --btn-secondary-hover: #4b5563;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.07);
+            --shadow-lg: 0 10px 30px rgba(0,0,0,0.1);
+            --shadow-xl: 0 20px 50px rgba(0,0,0,0.15);
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+        }
+
+        [data-theme="dark"] {
+            --bg-body: #0a0f1c;
+            --bg-card: #131a2c;
+            --bg-input: #1a2238;
+            --bg-soft: #1e2740;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --text-soft: #64748b;
+            --border-color: #2a334b;
+            --border-strong: #3b4666;
+            --accent-soft: rgba(0, 197, 255, 0.15);
+            --header-bg: #000000;
+            --header-text: #ffffff;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
+            --shadow-lg: 0 10px 30px rgba(0,0,0,0.5);
+            --shadow-xl: 0 20px 50px rgba(0,0,0,0.6);
+        }
+
+        /* ========== GLOBAL RESET ========== */
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            transition: background-color 0.3s ease, color 0.3s ease;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        button, input, select {
+            font-family: inherit;
+        }
+
+        button {
+            cursor: pointer;
+            border: none;
+            outline: none;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* ========== TOP BAR ========== */
+        .top-bar {
+            width: 100%;
+            padding: 14px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-card);
+            box-shadow: var(--shadow-sm);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .version-tag {
+            font-weight: 900;
+            font-size: 13px;
+            color: var(--accent-color);
+            background: var(--header-bg);
+            padding: 6px 14px;
+            border-radius: 999px;
+            letter-spacing: 1.5px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .version-tag::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--accent-color);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--accent-color);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .theme-toggle {
+            background: var(--bg-soft);
+            border: 1.5px solid var(--border-color);
+            color: var(--text-main);
+            padding: 7px 14px;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .theme-toggle:hover {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        .theme-toggle .icon {
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        /* ========== LOGO ========== */
+        .logo-wrapper {
+            width: 100%;
+            max-width: 720px;
+            padding: 30px 20px 10px;
+            text-align: center;
+        }
+
+        .company-logo {
+            max-width: 100%;
+            height: auto;
+            width: 560px;
+            display: block;
+            margin: 0 auto;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+        }
+
+        /* ========== APP CARD ========== */
+        .app-card {
+            background-color: var(--bg-card);
+            width: 92%;
+            max-width: 720px;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            overflow: hidden;
+            margin: 20px auto 30px;
+            border: 1px solid var(--border-color);
+        }
+
+        .card-header {
+            background-color: var(--header-bg);
+            color: var(--accent-color);
+            padding: 22px 28px;
+            text-align: center;
+        }
+
+        .card-header h1 {
+            margin: 0 0 4px;
+            font-size: 22px;
+            font-weight: 900;
+            letter-spacing: 0.5px;
+            color: var(--accent-color);
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .card-header p {
+            margin: 0;
+            font-size: 13px;
+            color: rgba(255,255,255,0.7);
+            font-weight: 400;
+            letter-spacing: 0.3px;
+        }
+
+        .card-body {
+            padding: 28px;
+        }
+
+        /* ========== STEP SECTIONS ========== */
+        .step {
+            margin-bottom: 24px;
+        }
+
+        .step-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent-color);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin: 0 0 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .step-number {
+            width: 22px;
+            height: 22px;
+            background: var(--header-bg);
+            color: var(--accent-color);
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 900;
+        }
+
+        /* ========== FORM INPUTS ========== */
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 14px;
+            margin-bottom: 12px;
+        }
+
+        .form-row.two-col {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-field label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            letter-spacing: 0.3px;
+        }
+
+        .form-field input,
+        .form-field select {
+            background: var(--bg-input);
+            border: 1.5px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 11px 14px;
+            font-size: 14px;
+            color: var(--text-main);
+            font-weight: 500;
+            transition: border 0.2s ease, box-shadow 0.2s ease;
+            width: 100%;
+        }
+
+        .form-field input:focus,
+        .form-field select:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+        }
+
+        .form-field input[readonly] {
+            background: var(--bg-soft);
+            color: var(--text-muted);
+        }
+
+        /* ========== UPLOAD ZONE ========== */
+        .upload-zone {
+            border: 2.5px dashed var(--border-strong);
+            border-radius: var(--radius-lg);
+            padding: 32px 20px;
+            text-align: center;
+            background: var(--bg-input);
+            transition: all 0.25s ease;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .upload-zone:hover,
+        .upload-zone.drag-over {
+            border-color: var(--accent-color);
+            background: var(--accent-soft);
+        }
+
+        .upload-zone.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .upload-icon {
+            width: 52px;
+            height: 52px;
+            margin: 0 auto 12px;
+            background: var(--accent-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--header-bg);
+            font-size: 26px;
+            font-weight: 900;
+            box-shadow: 0 6px 18px rgba(0, 197, 255, 0.35);
+        }
+
+        .upload-zone h3 {
+            margin: 0 0 6px;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .upload-zone p {
+            margin: 0;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .upload-zone input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        /* ========== STATUS BANNER ========== */
+        .status-banner {
+            margin: 14px 0;
+            padding: 12px 16px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-weight: 500;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            line-height: 1.4;
+        }
+
+        .status-banner.show {
+            display: flex;
+        }
+
+        .status-banner.info {
+            background: var(--accent-soft);
+            color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+        }
+
+        .status-banner.success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--btn-success);
+            border: 1px solid var(--btn-success);
+        }
+
+        .status-banner.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--btn-danger);
+            border: 1px solid var(--btn-danger);
+        }
+
+        .status-banner.warn {
+            background: rgba(245, 158, 11, 0.1);
+            color: #f59e0b;
+            border: 1px solid #f59e0b;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid currentColor;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ========== TYPE TOGGLE ========== */
+        .type-toggle {
+            display: flex;
+            background: var(--bg-soft);
+            border: 1.5px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 4px;
+            gap: 4px;
+        }
+
+        .type-toggle button {
+            flex: 1;
+            padding: 9px 12px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .type-toggle button.active {
+            background: var(--accent-color);
+            color: var(--header-bg);
+            box-shadow: 0 2px 8px rgba(0, 197, 255, 0.3);
+        }
+
+        /* ========== FILENAME PREVIEW ========== */
+        .filename-preview {
+            background: var(--header-bg);
+            color: var(--accent-color);
+            border-radius: var(--radius-md);
+            padding: 16px 18px;
+            margin: 16px 0;
+            font-family: 'Roboto Mono', 'Courier New', monospace;
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
+            word-break: break-word;
+            line-height: 1.5;
+            border: 2px solid var(--accent-color);
+            box-shadow: 0 4px 14px rgba(0, 197, 255, 0.2);
+        }
+
+        .filename-preview .label {
+            display: block;
+            font-size: 10px;
+            font-weight: 700;
+            color: rgba(255,255,255,0.5);
+            letter-spacing: 2px;
+            margin-bottom: 6px;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        /* ========== ACTION BUTTONS ========== */
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .btn {
+            padding: 13px 18px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: var(--btn-primary);
+            color: var(--btn-primary-text);
+            box-shadow: 0 4px 12px rgba(0, 197, 255, 0.35);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--btn-primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(0, 197, 255, 0.45);
+        }
+
+        .btn-danger {
+            background: var(--bg-soft);
+            color: var(--btn-danger);
+            border: 1.5px solid var(--btn-danger);
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: var(--btn-danger);
+            color: white;
+        }
+
+        /* ========== DETAILS PANEL ========== */
+        .details-panel {
+            background: var(--bg-soft);
+            border-radius: var(--radius-md);
+            padding: 18px;
+            margin-top: 14px;
+            border: 1px solid var(--border-color);
+            display: none;
+        }
+
+        .details-panel.show {
+            display: block;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            background: var(--bg-card);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+            margin-bottom: 14px;
+        }
+
+        .file-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--btn-danger);
+            color: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+
+        .file-meta {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-meta .name {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-main);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-meta .size {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* ========== FOOTER ========== */
+        .footer {
+            width: 100%;
+            text-align: center;
+            padding: 20px;
+            color: var(--text-muted);
+            font-size: 12px;
+            border-top: 1px solid var(--border-color);
+            margin-top: auto;
+        }
+
+        .footer strong {
+            color: var(--accent-color);
+            font-weight: 700;
+        }
+
+        /* ========== MOBILE RESPONSIVE ========== */
+        @media (max-width: 640px) {
+            .top-bar {
+                padding: 12px 16px;
+            }
+
+            .version-tag {
+                font-size: 12px;
+                padding: 5px 11px;
+                letter-spacing: 1px;
+            }
+
+            .theme-toggle {
+                padding: 6px 11px;
+                font-size: 12px;
+            }
+
+            .logo-wrapper {
+                padding: 20px 16px 8px;
+            }
+
+            .company-logo {
+                width: 100%;
+                max-width: 420px;
+            }
+
+            .app-card {
+                width: 94%;
+                margin: 14px auto 20px;
+                border-radius: var(--radius-md);
+            }
+
+            .card-header {
+                padding: 18px 20px;
+            }
+
+            .card-header h1 {
+                font-size: 18px;
+            }
+
+            .card-header p {
+                font-size: 12px;
+            }
+
+            .card-body {
+                padding: 20px 18px;
+            }
+
+            .form-row.two-col {
+                grid-template-columns: 1fr;
+            }
+
+            .upload-zone {
+                padding: 24px 16px;
+            }
+
+            .upload-icon {
+                width: 46px;
+                height: 46px;
+                font-size: 22px;
+            }
+
+            .upload-zone h3 {
+                font-size: 15px;
+            }
+
+            .action-buttons {
+                grid-template-columns: 1fr;
+            }
+
+            .filename-preview {
+                font-size: 12px;
+                padding: 14px 12px;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .card-header h1 {
+                font-size: 16px;
+            }
+            .step-title {
+                font-size: 11px;
+            }
+        }
+
+        /* ========== ACCESSIBILITY ========== */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ============== TOP BAR ============== -->
+    <header class="top-bar">
+        <span class="version-tag">v3.0</span>
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
+            <span class="icon" id="themeIcon">🌙</span>
+            <span id="themeLabel">Dark</span>
+        </button>
+    </header>
+
+    <!-- ============== LOGO ============== -->
+    <div class="logo-wrapper">
+        <img src="logo.png" alt="India Business International - eCommerce for the World" class="company-logo" id="companyLogo">
+    </div>
+
+    <!-- ============== MAIN APP CARD ============== -->
+    <main class="app-card">
+        <div class="card-header">
+            <h1>IBI FILE RE-NAMER</h1>
+            <p>Automated PDF renaming for eCommerce documents</p>
+        </div>
+
+        <div class="card-body">
+
+            <!-- STEP 1: Pickup Date -->
+            <section class="step">
+                <h2 class="step-title"><span class="step-number">1</span> Set Pickup Date</h2>
+                <div class="form-field">
+                    <input type="date" id="pickupDate" aria-label="Pickup Date">
+                </div>
+            </section>
+
+            <!-- STEP 2: Upload PDF -->
+            <section class="step">
+                <h2 class="step-title"><span class="step-number">2</span> Upload PDF File</h2>
+                <div class="upload-zone" id="uploadZone">
+                    <div class="upload-icon">+</div>
+                    <h3>Drop PDF here or tap to browse</h3>
+                    <p>Invoice, Shipping Label, or Manifest</p>
+                    <input type="file" id="fileInput" accept="application/pdf,.pdf">
+                </div>
+
+                <!-- Status banner -->
+                <div class="status-banner" id="statusBanner">
+                    <span id="statusContent"></span>
+                </div>
+
+                <!-- Details panel (shown after parsing) -->
+                <div class="details-panel" id="detailsPanel">
+                    <div class="file-info">
+                        <div class="file-icon">PDF</div>
+                        <div class="file-meta">
+                            <div class="name" id="fileName">document.pdf</div>
+                            <div class="size" id="fileSize">0 KB</div>
+                        </div>
+                    </div>
+
+                    <!-- Document Type Toggle -->
+                    <div class="step" style="margin-bottom: 14px;">
+                        <h2 class="step-title"><span class="step-number">3</span> Document Type</h2>
+                        <div class="type-toggle">
+                            <button id="typeInvoice" class="active" data-type="invoice">📄 Invoice / Label</button>
+                            <button id="typeManifest" data-type="manifest">📋 Manifest</button>
+                        </div>
+                    </div>
+
+                    <!-- Editable Fields -->
+                    <div class="step" style="margin-bottom: 0;">
+                        <h2 class="step-title"><span class="step-number">4</span> Edit Detected Info</h2>
+
+                        <div class="form-row two-col">
+                            <div class="form-field">
+                                <label for="platform">eCommerce Platform</label>
+                                <select id="platform">
+                                    <option value="Amazon">Amazon</option>
+                                    <option value="Flipkart">Flipkart</option>
+                                    <option value="Shopsy">Shopsy</option>
+                                    <option value="Meesho">Meesho</option>
+                                    <option value="ShopClues">ShopClues</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label for="invoiceDate">Invoice / Manifest Date</label>
+                                <input type="date" id="invoiceDate">
+                            </div>
+                        </div>
+
+                        <!-- Invoice-specific fields -->
+                        <div id="invoiceFields">
+                            <div class="form-row two-col">
+                                <div class="form-field">
+                                    <label for="productName">Product Name</label>
+                                    <input type="text" id="productName" placeholder="e.g., Coir Brush" maxlength="60">
+                                </div>
+                                <div class="form-field">
+                                    <label for="quantity">Quantity</label>
+                                    <input type="number" id="quantity" min="1" value="1">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Manifest-specific fields -->
+                        <div id="manifestFields" style="display: none;">
+                            <div class="form-field">
+                                <label for="orderCount">Number of Orders</label>
+                                <input type="number" id="orderCount" min="1" value="1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Filename Preview -->
+            <div class="filename-preview" id="filenamePreview" style="display: none;">
+                <span class="label">NEW FILENAME</span>
+                <span id="previewText">—</span>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button class="btn btn-primary" id="downloadBtn" disabled>
+                    ⬇ Download Renamed
+                </button>
+                <button class="btn btn-danger" id="clearBtn">
+                    ✕ Clear All
+                </button>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- ============== FOOTER ============== -->
+    <footer class="footer">
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.0</strong>
+    </footer>
+
+<script>
+/* =================================================================
+   IBI FILE RE-NAMER v3.0
+   Robust PDF renaming for Amazon / Flipkart / Shopsy / Meesho / ShopClues
+   ================================================================= */
+
+// Set PDF.js worker
+if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// ----- State -----
+const state = {
+    file: null,
+    fileBuffer: null,
+    fullText: '',
+    docType: 'invoice', // 'invoice' or 'manifest'
+    detected: {}
+};
+
+// ----- DOM refs -----
+const $ = id => document.getElementById(id);
+const themeToggle = $('themeToggle');
+const themeIcon = $('themeIcon');
+const themeLabel = $('themeLabel');
+const fileInput = $('fileInput');
+const uploadZone = $('uploadZone');
+const statusBanner = $('statusBanner');
+const statusContent = $('statusContent');
+const detailsPanel = $('detailsPanel');
+const fileName = $('fileName');
+const fileSize = $('fileSize');
+const platform = $('platform');
+const productName = $('productName');
+const quantity = $('quantity');
+const orderCount = $('orderCount');
+const invoiceDate = $('invoiceDate');
+const pickupDate = $('pickupDate');
+const typeInvoice = $('typeInvoice');
+const typeManifest = $('typeManifest');
+const invoiceFields = $('invoiceFields');
+const manifestFields = $('manifestFields');
+const filenamePreview = $('filenamePreview');
+const previewText = $('previewText');
+const downloadBtn = $('downloadBtn');
+const clearBtn = $('clearBtn');
+
+// =================== THEME ===================
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (theme === 'dark') {
+        themeIcon.textContent = '☀';
+        themeLabel.textContent = 'Light';
+    } else {
+        themeIcon.textContent = '🌙';
+        themeLabel.textContent = 'Dark';
+    }
+    try { localStorage.setItem('ibi-renamer-theme', theme); } catch (e) {}
+}
+
+themeToggle.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme') || 'light';
+    applyTheme(cur === 'dark' ? 'light' : 'dark');
+});
+
+// Initial theme
+try {
+    const saved = localStorage.getItem('ibi-renamer-theme');
+    applyTheme(saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+} catch (e) {
+    applyTheme('light');
+}
+
+// =================== STATUS BANNER ===================
+function showStatus(message, type = 'info', spinner = false) {
+    statusBanner.className = 'status-banner show ' + type;
+    statusContent.innerHTML = (spinner ? '<span class="spinner"></span>' : '') +
+        '<span>' + message + '</span>';
+    statusBanner.innerHTML = '';
+    statusBanner.appendChild(statusContent);
+    if (spinner) {
+        const sp = document.createElement('span');
+        sp.className = 'spinner';
+        statusBanner.insertBefore(sp, statusContent);
+    }
+}
+
+function hideStatus() {
+    statusBanner.className = 'status-banner';
+}
+
+// =================== DEFAULT DATES ===================
+function todayStr() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return yyyy + '-' + mm + '-' + dd;
+}
+
+pickupDate.value = todayStr();
+invoiceDate.value = todayStr();
+
+// =================== DATE HELPERS ===================
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatDateLong(dateStr) {
+    // dateStr: yyyy-mm-dd  ->  "23 May 2026"
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return '';
+    const yyyy = parts[0], mm = parseInt(parts[1], 10), dd = parseInt(parts[2], 10);
+    if (!yyyy || !mm || !dd) return '';
+    return dd + ' ' + MONTHS_SHORT[mm - 1] + ' ' + yyyy;
+}
+
+function formatDateShort(dateStr) {
+    // dateStr: yyyy-mm-dd  ->  "23 May"
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return '';
+    const mm = parseInt(parts[1], 10), dd = parseInt(parts[2], 10);
+    if (!mm || !dd) return '';
+    return dd + ' ' + MONTHS_SHORT[mm - 1];
+}
+
+// Extract date from text in many formats
+// Returns ISO string yyyy-mm-dd, or null
+function extractDate(text) {
+    if (!text) return null;
+    const monthsRe = '(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*';
+
+    // Try: "Invoice Date: 23-05-2026" / "Invoice Date : 23/05/2026" / "Order Date: 23.05.2026"
+    const labelPatterns = [
+        /(?:invoice\s+date|order\s+date|date\s+of\s+invoice|invoice\s+dt|bill\s+date|shipment\s+date|ship\s+date|manifest\s+date|generated\s+on)\s*[:\-]?\s*(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})/i,
+        new RegExp('(?:invoice\\s+date|order\\s+date|date|manifest\\s+date)\\s*[:\\-]?\\s*(\\d{1,2})\\s+' + monthsRe + '[\\s,]+(\\d{2,4})', 'i'),
+        new RegExp('(?:invoice\\s+date|order\\s+date|date|manifest\\s+date)\\s*[:\\-]?\\s*' + monthsRe + '\\s+(\\d{1,2})[\\s,]+(\\d{2,4})', 'i')
+    ];
+
+    for (const re of labelPatterns) {
+        const m = text.match(re);
+        if (m) {
+            let day, monthNum, year;
+            // Determine pattern shape
+            if (/^\d/.test(m[1]) && /^\d/.test(m[2])) {
+                // numeric dd mm yyyy
+                day = parseInt(m[1], 10);
+                monthNum = parseInt(m[2], 10);
+                year = parseInt(m[3], 10);
+            } else if (/^\d/.test(m[1])) {
+                // dd monthName yyyy
+                day = parseInt(m[1], 10);
+                monthNum = monthIndex(m[2]) + 1;
+                year = parseInt(m[3], 10);
+            } else {
+                // monthName dd yyyy
+                monthNum = monthIndex(m[1]) + 1;
+                day = parseInt(m[2], 10);
+                year = parseInt(m[3], 10);
+            }
+            if (year < 100) year += 2000;
+            if (day >= 1 && day <= 31 && monthNum >= 1 && monthNum <= 12 && year >= 2020 && year <= 2099) {
+                return toIso(year, monthNum, day);
+            }
+        }
+    }
+
+    // Generic dd/mm/yyyy without label - take first reasonable match
+    const genericPatterns = [
+        /\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})\b/g,
+        /\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})\b/g,
+        new RegExp('\\b(\\d{1,2})[\\s\\-]+' + monthsRe + '[\\s\\-,]+(\\d{2,4})\\b', 'gi'),
+        new RegExp('\\b' + monthsRe + '\\s+(\\d{1,2})[\\s,]+(\\d{2,4})\\b', 'gi')
+    ];
+
+    for (const re of genericPatterns) {
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            let day, monthNum, year;
+            if (/^\d/.test(m[1]) && /^\d/.test(m[2])) {
+                day = parseInt(m[1], 10);
+                monthNum = parseInt(m[2], 10);
+                year = parseInt(m[3], 10);
+            } else if (/^\d/.test(m[1])) {
+                day = parseInt(m[1], 10);
+                monthNum = monthIndex(m[2]) + 1;
+                year = parseInt(m[3], 10);
+            } else {
+                monthNum = monthIndex(m[1]) + 1;
+                day = parseInt(m[2], 10);
+                year = parseInt(m[3], 10);
+            }
+            if (year < 100) year += 2000;
+            if (day >= 1 && day <= 31 && monthNum >= 1 && monthNum <= 12 && year >= 2020 && year <= 2099) {
+                return toIso(year, monthNum, day);
+            }
+        }
+    }
+
+    return null;
+}
+
+function monthIndex(monthStr) {
+    const s = monthStr.toLowerCase().substring(0, 3);
+    return MONTHS_SHORT.findIndex(m => m.toLowerCase() === s);
+}
+
+function toIso(y, m, d) {
+    return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
+
+// =================== PLATFORM DETECTION ===================
+function detectPlatform(text) {
+    const t = text.toLowerCase();
+
+    // Most specific markers first
+    if (/\bshopclues\b/.test(t) || /clues\s*network/.test(t)) return 'ShopClues';
+    if (/\bmeesho\b/.test(t) || /fashnear\s+technologies/.test(t)) return 'Meesho';
+    if (/\bshopsy\b/.test(t)) return 'Shopsy';
+    if (/\bflipkart\b/.test(t) || /\bekart\b/.test(t) || /instakart/.test(t)) return 'Flipkart';
+    if (/\bamazon\b/.test(t) || /\bamazon\.in\b/.test(t) || /\basn\b/.test(t) || /amzn/.test(t)) return 'Amazon';
+
+    return 'Amazon'; // default fallback
+}
+
+// =================== DOC TYPE DETECTION ===================
+function detectDocType(text) {
+    const t = text.toLowerCase();
+    // Manifest indicators
+    if (/\bmanifest\b/.test(t) ||
+        /pickup\s+manifest/.test(t) ||
+        /shipment\s+manifest/.test(t) ||
+        /handover\s+manifest/.test(t) ||
+        /total\s+shipments?\s*[:\-]?\s*\d/.test(t) ||
+        /total\s+orders?\s*[:\-]?\s*\d/.test(t)) {
+        return 'manifest';
+    }
+    return 'invoice';
+}
+
+// =================== PRODUCT NAME EXTRACTION ===================
+function detectProductName(text) {
+    const t = text.toLowerCase();
+
+    // Try common IBI products
+    const productPatterns = [
+        { test: /coir\s+brush|coconut\s+coir\s+brush|coir.*?brush/i, name: 'Coir Brush' },
+        { test: /broom\s*stick|broomstick|coir\s+broom|broom/i, name: 'Broomstick' },
+        { test: /coir\s+mat|door\s*mat/i, name: 'Coir Mat' },
+        { test: /coir\s+rope/i, name: 'Coir Rope' },
+        { test: /coconut\s+shell/i, name: 'Coconut Shell' },
+        { test: /scrubber|kitchen\s+scrub/i, name: 'Scrubber' }
+    ];
+
+    for (const p of productPatterns) {
+        if (p.test.test(t)) return p.name;
+    }
+
+    return ''; // leave blank for user to fill
+}
+
+// =================== QUANTITY EXTRACTION ===================
+function detectQuantity(text) {
+    // Try summing "Qty" patterns first
+    const t = text;
+
+    // Pattern 1: "Qty: 2" or "Quantity: 2"
+    const qtyMatches = t.match(/(?:qty|quantity)\s*[:\-]?\s*(\d+)/gi);
+    if (qtyMatches && qtyMatches.length > 0) {
+        let total = 0;
+        for (const m of qtyMatches) {
+            const n = m.match(/\d+/);
+            if (n) total += parseInt(n[0], 10);
+        }
+        if (total > 0 && total < 10000) return total;
+    }
+
+    return 1; // default
+}
+
+// =================== ORDER COUNT EXTRACTION (for manifest) ===================
+function detectOrderCount(text) {
+    const t = text;
+
+    // Try labeled patterns first
+    const labelPatterns = [
+        /total\s+(?:orders?|shipments?|packages?|awbs?)\s*[:\-]?\s*(\d+)/i,
+        /(?:no\.?|number)\s+of\s+(?:orders?|shipments?|packages?)\s*[:\-]?\s*(\d+)/i,
+        /(\d+)\s+(?:orders?|shipments?|packages?|awbs?)\s+(?:in\s+)?(?:this\s+)?manifest/i
+    ];
+
+    for (const re of labelPatterns) {
+        const m = t.match(re);
+        if (m) {
+            const n = parseInt(m[1], 10);
+            if (n > 0 && n < 10000) return n;
+        }
+    }
+
+    // Fallback: count tracking IDs / AWB-like rows
+    // AWB patterns vary by platform — count occurrences of common patterns
+    const awbCount = (t.match(/\b[A-Z]{2,4}\d{8,14}\b/g) || []).length;
+    if (awbCount > 0 && awbCount < 1000) return awbCount;
+
+    return 1;
+}
+
+// =================== PDF PROCESSING ===================
+async function extractPdfText(arrayBuffer) {
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n';
+    }
+    return fullText;
+}
+
+async function processFile(file) {
+    if (!file) return;
+
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        showStatus('Please upload a PDF file.', 'error');
+        return;
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+        showStatus('File too large (max 50 MB).', 'error');
+        return;
+    }
+
+    state.file = file;
+    fileName.textContent = file.name;
+    fileSize.textContent = formatFileSize(file.size);
+
+    showStatus('Reading PDF...', 'info', true);
+
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        state.fileBuffer = arrayBuffer;
+
+        // pdf.js consumes the buffer — keep a clone for download
+        const cloneBuffer = arrayBuffer.slice(0);
+        state.fileBuffer = cloneBuffer;
+
+        const text = await extractPdfText(arrayBuffer);
+        state.fullText = text;
+
+        // Auto-detect
+        const detectedPlatform = detectPlatform(text);
+        const detectedType = detectDocType(text);
+        const detectedDate = extractDate(text) || todayStr();
+        const detectedProduct = detectProductName(text);
+        const detectedQty = detectQuantity(text);
+        const detectedOrders = detectOrderCount(text);
+
+        state.detected = {
+            platform: detectedPlatform,
+            docType: detectedType,
+            date: detectedDate,
+            product: detectedProduct,
+            quantity: detectedQty,
+            orders: detectedOrders
+        };
+
+        // Populate UI
+        platform.value = detectedPlatform;
+        invoiceDate.value = detectedDate;
+        productName.value = detectedProduct;
+        quantity.value = detectedQty;
+        orderCount.value = detectedOrders;
+
+        setDocType(detectedType);
+
+        detailsPanel.classList.add('show');
+        filenamePreview.style.display = 'block';
+        downloadBtn.disabled = false;
+
+        showStatus('✓ PDF parsed. Review the detected fields below and click Download.', 'success');
+        updatePreview();
+
+    } catch (err) {
+        console.error('PDF parse error:', err);
+        showStatus('Could not parse PDF. You can still set the fields manually and download.', 'warn');
+
+        // Still allow manual workflow
+        detailsPanel.classList.add('show');
+        filenamePreview.style.display = 'block';
+        downloadBtn.disabled = false;
+        updatePreview();
+    }
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+// =================== DOC TYPE TOGGLE ===================
+function setDocType(type) {
+    state.docType = type;
+    if (type === 'manifest') {
+        typeInvoice.classList.remove('active');
+        typeManifest.classList.add('active');
+        invoiceFields.style.display = 'none';
+        manifestFields.style.display = 'block';
+    } else {
+        typeManifest.classList.remove('active');
+        typeInvoice.classList.add('active');
+        invoiceFields.style.display = 'block';
+        manifestFields.style.display = 'none';
+    }
+    updatePreview();
+}
+
+typeInvoice.addEventListener('click', () => setDocType('invoice'));
+typeManifest.addEventListener('click', () => setDocType('manifest'));
+
+// =================== FILENAME BUILD ===================
+function sanitizeFileName(name) {
+    // Remove characters that are invalid in filenames on Windows/Mac/Linux
+    return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '').trim();
+}
+
+function buildFileName() {
+    const plat = platform.value || 'Platform';
+    const invDateLong = formatDateLong(invoiceDate.value);
+    const pickShort = formatDateShort(pickupDate.value);
+    const pickLong = formatDateLong(pickupDate.value);
+
+    let name;
+
+    if (state.docType === 'manifest') {
+        // "Amazon Manifest 5 Orders 23 May 2026"
+        const orders = parseInt(orderCount.value, 10) || 1;
+        name = plat + ' Manifest ' + orders + ' Orders ' + (invDateLong || pickLong);
+    } else {
+        // "Amazon Coir Brush 6 Qty 23 May 2026 D 23 May"
+        const prod = (productName.value || 'Product').trim();
+        const qty = parseInt(quantity.value, 10) || 1;
+        name = plat + ' ' + prod + ' ' + qty + ' Qty ' + invDateLong + ' D ' + pickShort;
+    }
+
+    name = sanitizeFileName(name);
+    return name + '.pdf';
+}
+
+function updatePreview() {
+    const name = buildFileName();
+    previewText.textContent = name;
+}
+
+// Bind preview updates to all inputs
+['change', 'input'].forEach(evt => {
+    [platform, productName, quantity, orderCount, invoiceDate, pickupDate]
+        .forEach(el => el.addEventListener(evt, updatePreview));
+});
+
+// =================== UPLOAD ZONE ===================
+fileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+        processFile(e.target.files[0]);
+    }
+});
+
+['dragenter', 'dragover'].forEach(evt => {
+    uploadZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadZone.classList.add('drag-over');
+    });
+});
+
+['dragleave', 'drop'].forEach(evt => {
+    uploadZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadZone.classList.remove('drag-over');
+    });
+});
+
+uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        processFile(e.dataTransfer.files[0]);
+    }
+});
+
+// =================== DOWNLOAD ===================
+downloadBtn.addEventListener('click', () => {
+    if (!state.fileBuffer) {
+        showStatus('Please upload a PDF first.', 'error');
+        return;
+    }
+
+    const newName = buildFileName();
+
+    try {
+        const blob = new Blob([state.fileBuffer], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = newName;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+
+        // Cleanup
+        setTimeout(() => {
+            URL.revokeObjectURL(url);
+            if (a.parentNode) a.parentNode.removeChild(a);
+        }, 100);
+
+        showStatus('✓ Downloaded: ' + newName, 'success');
+    } catch (err) {
+        console.error('Download error:', err);
+        showStatus('Download failed. Please try again.', 'error');
+    }
+});
+
+// =================== CLEAR ALL ===================
+clearBtn.addEventListener('click', () => {
+    if (!state.file && !productName.value && quantity.value === '1' && orderCount.value === '1') {
+        // Nothing to clear
+        showStatus('Nothing to clear.', 'info');
+        setTimeout(hideStatus, 1500);
+        return;
+    }
+
+    if (!confirm('Clear all fields and remove the loaded file?')) return;
+
+    state.file = null;
+    state.fileBuffer = null;
+    state.fullText = '';
+    state.detected = {};
+
+    fileInput.value = '';
+    productName.value = '';
+    quantity.value = '1';
+    orderCount.value = '1';
+    platform.value = 'Amazon';
+    invoiceDate.value = todayStr();
+    pickupDate.value = todayStr();
+
+    setDocType('invoice');
+
+    detailsPanel.classList.remove('show');
+    filenamePreview.style.display = 'none';
+    downloadBtn.disabled = true;
+
+    hideStatus();
+    showStatus('✓ All cleared.', 'success');
+    setTimeout(hideStatus, 1500);
+});
+
+// =================== LOGO FALLBACK ===================
+// If logo.png fails (missing), gracefully hide so layout isn't broken
+$('companyLogo').addEventListener('error', function() {
+    this.style.display = 'none';
+});
+
+// =================== INITIAL PREVIEW ===================
+updatePreview();
+</script>
+
+</body>
+</html>
