@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IBI File Re-Namer</title>
+
+    <link rel="icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='black'/%3E%3Ctext x='50%25' y='50%25' font-family='Roboto, Arial, sans-serif' font-size='24' font-weight='bold' fill='%2300c5ff' dominant-baseline='central' text-anchor='middle'%3EIBI%3C/text%3E%3C/svg%3E" type="image/svg+xml">
+
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
+    <style>
+        :root {
+            --bg-body: #f4f5f7;
+            --bg-card: #ffffff;
+            --text-main: #333333;
+            --text-muted: #666666;
+            --border-color: #e0e0e0;
+            --accent-color: #00c5ff; /* IBI Blue */
+            --header-bg: #000000;    /* Black Bg */
+            --btn-bg: #10b981;
+            --btn-hover: #059669;
+            --btn-clear: #ef4444;
+            --btn-clear-hover: #dc2626;
+        }
+
+        [data-theme="dark"] {
+            --bg-body: #0f172a;
+            --bg-card: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --header-bg: #000000;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Top Bar: Version & Toggle */
+        .top-bar {
+            width: 100%;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-sizing: border-box;
+            background-color: var(--bg-card);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .version-tag {
+            font-weight: 900;
+            font-size: 14px;
+            color: var(--accent-color);
+            background: var(--header-bg);
+            padding: 6px 14px;
+            border-radius: 12px;
+            letter-spacing: 1px;
+        }
+
+        .theme-toggle {
+            background: none;
+            border: 2px solid var(--border-color);
+            color: var(--text-main);
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        /* Prominent Company Logo */
+        .company-logo {
+            max-width: 90%;
+            height: auto;
+            width: 550px;
+            margin: 30px auto 20px auto;
+            display: block;
+            border-radius: 4px;
+        }
+
+        /* Main Application Card */
+        .app-card {
+            background-color: var(--bg-card);
+            width: 90%;
+            max-width: 650px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            overflow: hidden;
+            margin-bottom: 40px;
+        }
+
+        /* Header Style strictly per instructions */
+        .app-header {
+            background-color: var(--header-bg);
+            padding: 24px;
+            text-align: center;
+            border-bottom: 4px solid var(--accent-color);
+        }
+
+        .app-header h1 {
+            color: var(--accent-color);
+            margin: 0;
+            font-size: 26px;
+            font-weight: 900;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        .app-body {
+            padding: 30px;
+        }
+
+        /* Upload Area */
+        .upload-area {
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 50px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background-color: rgba(0, 197, 255, 0.03);
+        }
+
+        .upload-area:hover, .upload-area.dragover {
+            border-color: var(--accent-color);
+            background-color: rgba(0, 197, 255, 0.08);
+        }
+
+        .upload-icon {
+            font-size: 45px;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .upload-subtext {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        input[type="file"] { display: none; }
+
+        /* Results Area */
+        .result-area {
+            display: none;
+            margin-top: 25px;
+            background: var(--bg-body);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .result-row { margin-bottom: 12px; }
+        
+        .result-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .result-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+            word-break: break-all;
+            margin-top: 4px;
+        }
+
+        .new-filename { color: var(--accent-color); }
+
+        /* Buttons */
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+        }
+
+        button {
+            flex: 1;
+            padding: 16px;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Roboto', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        button:active { transform: scale(0.98); }
+        button:disabled { cursor: not-allowed; opacity: 0.6; }
+
+        .btn-download { background-color: var(--btn-bg); }
+        .btn-download:hover:not(:disabled) { background-color: var(--btn-hover); }
+
+        .btn-clear { background-color: var(--btn-clear); }
+        .btn-clear:hover { background-color: var(--btn-clear-hover); }
+
+        #statusText {
+            margin-top: 15px;
+            font-size: 15px;
+            font-weight: 700;
+            text-align: center;
+            color: var(--accent-color);
+        }
+
+        @media (max-width: 600px) {
+            .btn-group { flex-direction: column; }
+            .company-logo { width: 95%; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="top-bar">
+        <div class="version-tag">v1.1</div>
+        <button class="theme-toggle" id="themeBtn" onclick="toggleTheme()">🌙 Dark</button>
+    </div>
+
+    <img src="Etsy Cover Photo.png" alt="India Business International Logo" class="company-logo" onerror="this.style.display='none';">
+
+    <div class="app-card">
+        <div class="app-header">
+            <h1>IBI File Re-Namer</h1>
+        </div>
+        
+        <div class="app-body">
+            <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-icon">📄</div>
+                <div class="upload-text">Upload PDF Document</div>
+                <div class="upload-subtext">Click or drag & drop file here</div>
+                <input type="file" id="fileInput" accept="application/pdf">
+            </div>
+
+            <div id="statusText"></div>
+
+            <div class="result-area" id="resultArea">
+                <div class="result-row">
+                    <div class="result-label">Original File:</div>
+                    <div class="result-value" id="oldFileName">-</div>
+                </div>
+                <div class="result-row">
+                    <div class="result-label">System Output Name:</div>
+                    <div class="result-value new-filename" id="newFileName">-</div>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn-download" id="downloadBtn" onclick="downloadRenamedFile()">Save & Download File ⬇️</button>
+                    <button class="btn-clear" onclick="clearAll()">Clear All 🔄</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==============================================================================
+        // 🚨 IBI PRODUCT MEMORY DATABASE 🚨
+        // ==============================================================================
+        // Because a browser cannot directly scrape a private Google Sheet, 
+        // you maintain your product list here. The system will scan the PDF text 
+        // for any of the "keywords" and rename the file using the "outputName".
+        // Add new products to this list exactly like the examples below.
+        // ==============================================================================
+        const PRODUCT_DATABASE = [
+            { outputName: "Chappal Stitching Tool Awl", keywords: ["awl", "chappal", "shoe repair", "stitching tool"] },
+            { outputName: "Aluminium Uruli", keywords: ["uruli", "aluminium uruli"] },
+            { outputName: "Coir Brush", keywords: ["coir brush", "coconut coir fiber", "coconut brush", "dry brush"] },
+            { outputName: "Tapioca Cassava Stem Cuttings", keywords: ["tapioca", "cassava stem", "cassava cuttings"] },
+            { outputName: "Hyderabadi Biryani Masala", keywords: ["biryani masala", "hyderabadi"] },
+            { outputName: "Aluminium Puttu Maker", keywords: ["puttu maker", "puttu"] },
+            { outputName: "Clay Pot", keywords: ["clay pot", "earthen"] }
+        ];
+
+        // PDF.js Initialization
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        let currentFileBlob = null;
+        let generatedFilename = "";
+
+        // Theme Engine
+        const currentTheme = localStorage.getItem('ibi_theme') || 'light';
+        if (currentTheme === 'dark') {
+            document.body.setAttribute('data-theme', 'dark');
+            document.getElementById('themeBtn').innerText = '☀️ Light';
+        }
+
+        function toggleTheme() {
+            const isDark = document.body.getAttribute('data-theme') === 'dark';
+            if (isDark) {
+                document.body.removeAttribute('data-theme');
+                localStorage.setItem('ibi_theme', 'light');
+                document.getElementById('themeBtn').innerText = '🌙 Dark';
+            } else {
+                document.body.setAttribute('data-theme', 'dark');
+                localStorage.setItem('ibi_theme', 'dark');
+                document.getElementById('themeBtn').innerText = '☀️ Light';
+            }
+        }
+
+        // Drag and Drop Listeners
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('dragover'); });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFileUpload(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) handleFileUpload(e.target.files[0]);
+        });
+
+        function clearAll() {
+            fileInput.value = "";
+            currentFileBlob = null;
+            generatedFilename = "";
+            document.getElementById('resultArea').style.display = 'none';
+            document.getElementById('statusText').innerText = '';
+            document.getElementById('dropZone').style.display = 'block';
+        }
+
+        function handleFileUpload(file) {
+            if (file.type !== "application/pdf") {
+                alert("Invalid format. Please upload a PDF file.");
+                return;
+            }
+
+            document.getElementById('dropZone').style.display = 'none';
+            document.getElementById('statusText').innerText = "Analyzing Internal Data...";
+            currentFileBlob = file;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const typedarray = new Uint8Array(e.target.result);
+                extractTextFromPDF(typedarray, file.name);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        async function extractTextFromPDF(typedarray, originalName) {
+            try {
+                const pdf = await pdfjsLib.getDocument({data: typedarray}).promise;
+                let fullText = "";
+                
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(" ");
+                    fullText += pageText + " ";
+                }
+                
+                generateNewFilename(fullText, originalName);
+
+            } catch (error) {
+                console.error("PDF Parsing Error:", error);
+                document.getElementById('statusText').innerText = "Error analyzing PDF.";
+                generateNewFilename("", originalName);
+            }
+        }
+
+        function formatToCustomDate(dateString) {
+            if (!dateString) return getTodayFormatted();
+            try {
+                const parts = dateString.match(/(\d{2})[-./](\d{2})[-./](\d{4})/);
+                if (parts) {
+                    const dateObj = new Date(`${parts[3]}-${parts[2]}-${parts[1]}`);
+                    return formatDisplayDate(dateObj);
+                }
+                const dateObj = new Date(dateString);
+                if (!isNaN(dateObj.getTime())) return formatDisplayDate(dateObj);
+            } catch (e) {
+                return getTodayFormatted();
+            }
+            return getTodayFormatted();
+        }
+
+        function formatDisplayDate(dateObj) {
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            return `${dateObj.getDate()} ${months[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
+        }
+
+        function getTodayFormatted() {
+            return formatDisplayDate(new Date());
+        }
+
+        // Logic Processing Engine
+        function generateNewFilename(text, originalName) {
+            document.getElementById('statusText').innerText = "Running Nomenclature Protocols...";
+
+            // 1. Identify Platform Safely
+            let platform = "Other";
+            if (/amazon/i.test(text) || /ATSPL/i.test(text)) platform = "Amazon";
+            else if (/flipkart/i.test(text) || /e-kart/i.test(text)) platform = "Flipkart";
+            else if (/shopclues/i.test(text)) platform = "ShopClues";
+            else if (/meesho/i.test(text) || /T SASIMURUGAN/i.test(text)) platform = "Meesho";
+
+            // 2. Identify Document Type
+            let isManifest = /manifest/i.test(text);
+
+            // 3. Extract Dates
+            const dateRegex = /(\d{2})[-./](\d{2})[-./](\d{4})|[A-Z][a-z]+\s\d{1,2},\s\d{4}/i;
+            const dateMatch = text.match(dateRegex);
+            const docDate = formatToCustomDate(dateMatch ? dateMatch[0] : null);
+            const pickupDate = getTodayFormatted(); 
+
+            let finalName = "";
+
+            if (isManifest) {
+                // Find Manifest Order Quantity
+                let qty = "Unknown";
+                const pkgMatch = text.match(/Total Packages:\s*(\d+)/i) || text.match(/Shipments to Dispatch:\s*(\d+)/i) || text.match(/No\. Of Shipments:\s*(\d+)/i);
+                if (pkgMatch) qty = pkgMatch[1];
+                
+                finalName = `${platform} Manifest ${qty} Orders ${docDate} D ${pickupDate}.pdf`;
+
+            } else {
+                // Find Product Quantity on Invoice (Fixing the Flipkart 1+1 Issue)
+                let qty = "1";
+                
+                // Advanced Flipkart Check: Look for aggregate totals first
+                const totalQtyMatch = text.match(/TOTAL QTY:\s*(\d+)/i);
+                if (totalQtyMatch) {
+                    qty = totalQtyMatch[1];
+                } else {
+                    // Fallback to standard quantity parsing
+                    const qtyMatch = text.match(/QTY\s*(\d+)/i) || text.match(/(\d+)\s*Qty/i) || text.match(/Net\s*Qty\s*(\d+)/i);
+                    if (qtyMatch) qty = qtyMatch[1];
+                }
+
+                // Database Memory Matching (Fixing Meesho generic naming)
+                let matchedProduct = "Mixed Items";
+                for (let item of PRODUCT_DATABASE) {
+                    for (let key of item.keywords) {
+                        if (new RegExp(key, "i").test(text)) {
+                            matchedProduct = item.outputName;
+                            break;
+                        }
+                    }
+                    if (matchedProduct !== "Mixed Items") break;
+                }
+
+                // Formatting exact string requested
+                finalName = `${platform} ${matchedProduct} ${qty} Qty ${docDate} D ${pickupDate}.pdf`;
+            }
+
+            // Execute Interface Updates
+            generatedFilename = finalName;
+            document.getElementById('oldFileName').innerText = originalName;
+            document.getElementById('newFileName').innerText = generatedFilename;
+            
+            document.getElementById('statusText').innerText = "";
+            document.getElementById('resultArea').style.display = 'block';
+
+            // Auto-trigger Download
+            downloadRenamedFile();
+        }
+
+        // Generates blob link and forces download
+        function downloadRenamedFile() {
+            if (!currentFileBlob || !generatedFilename) return;
+
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(currentFileBlob);
+            link.download = generatedFilename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
