@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#05080a">
+    <title>IBI File Re-Namer</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+    <link rel="stylesheet" href="./styles.css">
+    <script type="module" src="./src/app.js"></script>
+  </head>
+  <body data-theme="dark">
+    <header class="hero">
+      <span class="version" aria-label="Application version">v1.0</span>
+      <label class="switch theme-switch" for="themeToggle">
+        <span class="switch-label">Light mode</span>
+        <input id="themeToggle" type="checkbox" role="switch" aria-label="Use light mode">
+        <span class="switch-track" aria-hidden="true"></span>
+      </label>
+      <img class="logo" src="./assets/ibi-logo.png" alt="India Business International - eCommerce for the World">
+      <div class="hero-title">
+        <p class="eyebrow">Document operations</p>
+        <h1>IBI File Re-Namer</h1>
+        <p class="intro">Rename marketplace invoices, shipping labels and manifests consistently before download.</p>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel upload-panel" aria-labelledby="uploadHeading">
+        <div class="panel-heading">
+          <h2 id="uploadHeading">Upload PDF</h2>
+          <span class="step">01</span>
+        </div>
+        <div id="dropzone" class="dropzone">
+          <svg class="upload-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 16V4m0 0L7 9m5-5 5 5M5 15v4h14v-4"/>
+          </svg>
+          <p class="drop-title">Drop one PDF here</p>
+          <p class="muted">or choose an invoice, label or manifest</p>
+          <button id="chooseButton" class="button secondary" type="button">Choose PDF</button>
+          <input id="fileInput" type="file" accept="application/pdf,.pdf" hidden>
+        </div>
+        <div id="fileCard" class="file-card hidden" aria-live="polite">
+          <div>
+            <p id="selectedFileName" class="selected-name"></p>
+            <p id="selectedFileMeta" class="muted"></p>
+          </div>
+          <span class="pdf-badge">PDF</span>
+        </div>
+        <div id="status" class="status idle" aria-live="polite">
+          <span class="status-dot"></span>
+          <span id="statusText">Ready for a PDF file.</span>
+        </div>
+        <p class="privacy">Private by design: analysis and renaming occur in your browser. The document is not uploaded to a server.</p>
+      </section>
+
+      <section class="panel fields-panel" aria-labelledby="detailsHeading">
+        <div class="panel-heading">
+          <h2 id="detailsHeading">Rename Details</h2>
+          <span class="step">02</span>
+        </div>
+
+        <div class="type-row">
+          <div>
+            <span class="label">Document type</span>
+            <p id="typeDescription" class="muted small">Invoice &amp; Shipping Label</p>
+          </div>
+          <label class="switch type-switch" for="manifestToggle">
+            <span class="switch-label">Manifest</span>
+            <input id="manifestToggle" type="checkbox" role="switch" aria-label="Document is a manifest">
+            <span class="switch-track" aria-hidden="true"></span>
+          </label>
+        </div>
+
+        <form id="renameForm" autocomplete="off">
+          <div class="field">
+            <label for="platform">eCommerce Platform</label>
+            <select id="platform" required>
+              <option value="">Choose platform</option>
+              <option>Amazon</option>
+              <option>Flipkart</option>
+              <option>Meesho</option>
+              <option>Etsy</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div id="customPlatformField" class="field hidden">
+            <label for="customPlatform">Platform name</label>
+            <input id="customPlatform" type="text" placeholder="Enter platform name">
+          </div>
+
+          <div id="invoiceFields" class="field-grid">
+            <div class="field wide">
+              <label for="product">Product Name</label>
+              <input id="product" type="text" placeholder="e.g. Coir Brush">
+            </div>
+            <div class="field">
+              <label for="quantity">Quantity</label>
+              <input id="quantity" type="number" min="1" step="1" placeholder="e.g. 6">
+            </div>
+            <div class="field">
+              <label for="invoiceDate">Invoice Date</label>
+              <input id="invoiceDate" type="date">
+            </div>
+          </div>
+
+          <div id="manifestFields" class="field-grid hidden">
+            <div class="field">
+              <label for="orderCount">Qty Orders</label>
+              <input id="orderCount" type="number" min="1" step="1" placeholder="e.g. 5">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="pickupDate">Pickup Date</label>
+            <input id="pickupDate" type="date">
+          </div>
+        </form>
+
+        <div class="preview" aria-live="polite">
+          <span class="label">Output filename</span>
+          <p id="outputName" class="output-name">Complete the required details to create a filename.</p>
+          <p id="validationMessage" class="validation"></p>
+        </div>
+
+        <div class="action-row">
+          <button id="downloadButton" class="button primary" type="button" disabled>Download Renamed PDF</button>
+          <button id="clearButton" class="button ghost" type="button">Clear All</button>
+        </div>
+        <label class="switch clear-switch" for="clearAfterDownload">
+          <span class="switch-label">Clear all after download</span>
+          <input id="clearAfterDownload" type="checkbox" role="switch">
+          <span class="switch-track" aria-hidden="true"></span>
+        </label>
+      </section>
+
+      <section class="panel guide-panel" aria-labelledby="guideHeading">
+        <div class="panel-heading compact">
+          <h2 id="guideHeading">Naming Standard</h2>
+        </div>
+        <div class="rules">
+          <article>
+            <h3>Invoice &amp; Shipping Label</h3>
+            <code>Amazon Coir Brush 6 Qty 23 May 2026 D 23 May.pdf</code>
+          </article>
+          <article>
+            <h3>Manifest</h3>
+            <code>Amazon Manifest 5 Orders 23 May 2026.pdf</code>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">India Business International | eCommerce for the World</footer>
+  </body>
+</html>
