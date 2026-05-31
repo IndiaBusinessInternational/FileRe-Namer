@@ -1,0 +1,2698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>IBI File Re-Namer v3.18</title>
+
+    <!-- Favicon: IBI text in cyan on black background, Roboto font -->
+    <link rel="icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23000000'/%3E%3Ctext x='50%25' y='50%25' font-family='Roboto, Arial, sans-serif' font-size='22' font-weight='900' fill='%2300c5ff' dominant-baseline='central' text-anchor='middle'%3EIBI%3C/text%3E%3C/svg%3E" type="image/svg+xml">
+
+    <!-- Roboto font (all weights) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- PDF.js for PDF text extraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <style>
+        /* ========== ROOT VARIABLES ========== */
+        :root {
+            --bg-body: #f4f5f7;
+            --bg-card: #ffffff;
+            --bg-input: #f9fafb;
+            --bg-soft: #f1f5f9;
+            --text-main: #1a1a1a;
+            --text-muted: #6b7280;
+            --text-soft: #9ca3af;
+            --border-color: #e5e7eb;
+            --border-strong: #d1d5db;
+            --accent-color: #00c5ff;
+            --accent-hover: #00a8db;
+            --accent-soft: rgba(0, 197, 255, 0.1);
+            --header-bg: #000000;
+            --header-text: #ffffff;
+            --btn-primary: #00c5ff;
+            --btn-primary-hover: #00a8db;
+            --btn-primary-text: #000000;
+            --btn-success: #10b981;
+            --btn-success-hover: #059669;
+            --btn-danger: #ef4444;
+            --btn-danger-hover: #dc2626;
+            --btn-secondary: #6b7280;
+            --btn-secondary-hover: #4b5563;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.07);
+            --shadow-lg: 0 10px 30px rgba(0,0,0,0.1);
+            --shadow-xl: 0 20px 50px rgba(0,0,0,0.15);
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 16px;
+            --radius-xl: 24px;
+        }
+
+        [data-theme="dark"] {
+            --bg-body: #0a0f1c;
+            --bg-card: #131a2c;
+            --bg-input: #1a2238;
+            --bg-soft: #1e2740;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --text-soft: #64748b;
+            --border-color: #2a334b;
+            --border-strong: #3b4666;
+            --accent-soft: rgba(0, 197, 255, 0.15);
+            --header-bg: #000000;
+            --header-text: #ffffff;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+            --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
+            --shadow-lg: 0 10px 30px rgba(0,0,0,0.5);
+            --shadow-xl: 0 20px 50px rgba(0,0,0,0.6);
+        }
+
+        /* ========== GLOBAL RESET ========== */
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            transition: background-color 0.3s ease, color 0.3s ease;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        button, input, select {
+            font-family: inherit;
+        }
+
+        button {
+            cursor: pointer;
+            border: none;
+            outline: none;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* ========== TOP BAR ========== */
+        .top-bar {
+            width: 100%;
+            padding: 14px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: var(--bg-card);
+            box-shadow: var(--shadow-sm);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .version-tag {
+            font-weight: 900;
+            font-size: 13px;
+            color: var(--accent-color);
+            background: var(--header-bg);
+            padding: 6px 14px;
+            border-radius: 999px;
+            letter-spacing: 1.5px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .version-tag::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            background: var(--accent-color);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--accent-color);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .theme-toggle {
+            background: var(--bg-soft);
+            border: 1.5px solid var(--border-color);
+            color: var(--text-main);
+            padding: 7px 14px;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .theme-toggle:hover {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        .theme-toggle .icon {
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        /* ========== LOGO ========== */
+        .logo-wrapper {
+            width: 100%;
+            max-width: 720px;
+            padding: 30px 20px 10px;
+            text-align: center;
+        }
+
+        .company-logo {
+            max-width: 100%;
+            height: auto;
+            width: 560px;
+            display: block;
+            margin: 0 auto;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+        }
+
+        /* ========== APP CARD ========== */
+        .app-card {
+            background-color: var(--bg-card);
+            width: 92%;
+            max-width: 720px;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            overflow: hidden;
+            margin: 20px auto 30px;
+            border: 1px solid var(--border-color);
+        }
+
+        .card-header {
+            background-color: var(--header-bg);
+            color: var(--accent-color);
+            padding: 22px 28px;
+            text-align: center;
+        }
+
+        .card-header h1 {
+            margin: 0 0 4px;
+            font-size: 22px;
+            font-weight: 900;
+            letter-spacing: 0.5px;
+            color: var(--accent-color);
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .card-header p {
+            margin: 0;
+            font-size: 13px;
+            color: rgba(255,255,255,0.7);
+            font-weight: 400;
+            letter-spacing: 0.3px;
+        }
+
+        .card-body {
+            padding: 28px;
+        }
+
+        /* ========== STEP SECTIONS ========== */
+        .step {
+            margin-bottom: 24px;
+        }
+
+        .step-title {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent-color);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin: 0 0 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .step-number {
+            width: 22px;
+            height: 22px;
+            background: var(--header-bg);
+            color: var(--accent-color);
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 900;
+        }
+
+        /* ========== FORM INPUTS ========== */
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 14px;
+            margin-bottom: 12px;
+        }
+
+        .form-row.two-col {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-field label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            letter-spacing: 0.3px;
+        }
+
+        .form-field input,
+        .form-field select {
+            background: var(--bg-input);
+            border: 1.5px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 11px 14px;
+            font-size: 14px;
+            color: var(--text-main);
+            font-weight: 500;
+            transition: border 0.2s ease, box-shadow 0.2s ease;
+            width: 100%;
+        }
+
+        .form-field input:focus,
+        .form-field select:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+        }
+
+        .form-field input[readonly] {
+            background: var(--bg-soft);
+            color: var(--text-muted);
+        }
+
+        /* ========== UPLOAD ZONE ========== */
+        .upload-zone {
+            border: 2.5px dashed var(--border-strong);
+            border-radius: var(--radius-lg);
+            padding: 32px 20px;
+            text-align: center;
+            background: var(--bg-input);
+            transition: all 0.25s ease;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .upload-zone:hover,
+        .upload-zone.drag-over {
+            border-color: var(--accent-color);
+            background: var(--accent-soft);
+        }
+
+        .upload-zone.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .upload-icon {
+            width: 52px;
+            height: 52px;
+            margin: 0 auto 12px;
+            background: var(--accent-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--header-bg);
+            font-size: 26px;
+            font-weight: 900;
+            box-shadow: 0 6px 18px rgba(0, 197, 255, 0.35);
+        }
+
+        .upload-zone h3 {
+            margin: 0 0 6px;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .upload-zone p {
+            margin: 0;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .upload-zone input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        /* ========== STATUS BANNER ========== */
+        .status-banner {
+            margin: 14px 0;
+            padding: 12px 16px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-weight: 500;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            line-height: 1.4;
+        }
+
+        .status-banner.show {
+            display: flex;
+        }
+
+        .status-banner.info {
+            background: var(--accent-soft);
+            color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+        }
+
+        .status-banner.success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--btn-success);
+            border: 1px solid var(--btn-success);
+        }
+
+        .status-banner.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--btn-danger);
+            border: 1px solid var(--btn-danger);
+        }
+
+        .status-banner.warn {
+            background: rgba(245, 158, 11, 0.1);
+            color: #f59e0b;
+            border: 1px solid #f59e0b;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid currentColor;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ========== TYPE TOGGLE ========== */
+        .type-toggle {
+            display: flex;
+            background: var(--bg-soft);
+            border: 1.5px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 4px;
+            gap: 4px;
+        }
+
+        .type-toggle button {
+            flex: 1;
+            padding: 9px 12px;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .type-toggle button.active {
+            background: var(--accent-color);
+            color: var(--header-bg);
+            box-shadow: 0 2px 8px rgba(0, 197, 255, 0.3);
+        }
+
+        /* ========== FILENAME PREVIEW ========== */
+        .filename-preview {
+            background: var(--header-bg);
+            color: var(--accent-color);
+            border-radius: var(--radius-md);
+            padding: 16px 18px;
+            margin: 16px 0;
+            font-family: 'Roboto Mono', 'Courier New', monospace;
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
+            word-break: break-word;
+            line-height: 1.5;
+            border: 2px solid var(--accent-color);
+            box-shadow: 0 4px 14px rgba(0, 197, 255, 0.2);
+        }
+
+        .filename-preview .label {
+            display: block;
+            font-size: 10px;
+            font-weight: 700;
+            color: rgba(255,255,255,0.5);
+            letter-spacing: 2px;
+            margin-bottom: 6px;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        /* ========== ACTION BUTTONS ========== */
+        .action-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 18px;
+        }
+        .action-buttons .btn-clear-row {
+            grid-column: 1 / -1;   /* full-width Clear All on second row */
+        }
+
+        .btn {
+            padding: 13px 18px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: var(--btn-primary);
+            color: var(--btn-primary-text);
+            box-shadow: 0 4px 12px rgba(0, 197, 255, 0.35);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--btn-primary-hover);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(0, 197, 255, 0.45);
+        }
+
+        .btn-gdrive {
+            background: #1a73e8;
+            color: #fff;
+            border: none;
+            box-shadow: 0 4px 12px rgba(26,115,232,0.3);
+        }
+        .btn-gdrive:hover:not(:disabled) {
+            background: #1557b0;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 18px rgba(26,115,232,0.4);
+        }
+        .btn-gdrive:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+        .btn-danger {
+            background: var(--bg-soft);
+            color: var(--btn-danger);
+            border: 1.5px solid var(--btn-danger);
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: var(--btn-danger);
+            color: white;
+        }
+
+        /* Drive upload status row */
+        .drive-status {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 10px;
+            padding: 8px 12px;
+            background: var(--bg-soft);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            word-break: break-all;
+        }
+        .drive-status.show    { display: flex; }
+        .drive-status.success { color: #1a73e8; background: rgba(26,115,232,0.07); border-color: rgba(26,115,232,0.3); }
+        .drive-status.error   { color: #ef4444; background: rgba(239,68,68,0.07);  border-color: rgba(239,68,68,0.3);  }
+        .drive-status a       { color: inherit; font-weight: 600; }
+
+        /* ========== DETAILS PANEL ========== */
+        .details-panel {
+            background: var(--bg-soft);
+            border-radius: var(--radius-md);
+            padding: 18px;
+            margin-top: 14px;
+            border: 1px solid var(--border-color);
+            display: none;
+        }
+
+        .details-panel.show {
+            display: block;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ========== DEBUG VIEWER ========== */
+        .debug-section {
+            margin-top: 16px;
+            border-top: 1px dashed var(--border-color);
+            padding-top: 14px;
+        }
+
+        .debug-toggle {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 4px 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        .debug-toggle:hover {
+            color: var(--accent-color);
+        }
+
+        .debug-content {
+            display: none;
+            margin-top: 10px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 10px 12px;
+            font-family: 'Roboto Mono', 'Courier New', monospace;
+            font-size: 11px;
+            color: var(--text-muted);
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.5;
+        }
+
+        .debug-content.show {
+            display: block;
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            background: var(--bg-card);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+            margin-bottom: 14px;
+        }
+
+        .file-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--btn-danger);
+            color: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+
+        .file-meta {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-meta .name {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-main);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .file-meta .size {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* ========== FOOTER ========== */
+        .footer {
+            width: 100%;
+            text-align: center;
+            padding: 20px;
+            color: var(--text-muted);
+            font-size: 12px;
+            border-top: 1px solid var(--border-color);
+            margin-top: auto;
+        }
+
+        .footer strong {
+            color: var(--accent-color);
+            font-weight: 700;
+        }
+
+        /* ========== MOBILE RESPONSIVE ========== */
+        @media (max-width: 640px) {
+            .top-bar {
+                padding: 12px 16px;
+            }
+
+            .version-tag {
+                font-size: 12px;
+                padding: 5px 11px;
+                letter-spacing: 1px;
+            }
+
+            .theme-toggle {
+                padding: 6px 11px;
+                font-size: 12px;
+            }
+
+            .logo-wrapper {
+                padding: 20px 16px 8px;
+            }
+
+            .company-logo {
+                width: 100%;
+                max-width: 420px;
+            }
+
+            .app-card {
+                width: 94%;
+                margin: 14px auto 20px;
+                border-radius: var(--radius-md);
+            }
+
+            .card-header {
+                padding: 18px 20px;
+            }
+
+            .card-header h1 {
+                font-size: 18px;
+            }
+
+            .card-header p {
+                font-size: 12px;
+            }
+
+            .card-body {
+                padding: 20px 18px;
+            }
+
+            .form-row.two-col {
+                grid-template-columns: 1fr;
+            }
+
+            .upload-zone {
+                padding: 24px 16px;
+            }
+
+            .upload-icon {
+                width: 46px;
+                height: 46px;
+                font-size: 22px;
+            }
+
+            .upload-zone h3 {
+                font-size: 15px;
+            }
+
+            .action-buttons {
+                grid-template-columns: 1fr;
+            }
+
+            .filename-preview {
+                font-size: 12px;
+                padding: 14px 12px;
+            }
+        }
+
+        @media (max-width: 380px) {
+            .card-header h1 {
+                font-size: 16px;
+            }
+            .step-title {
+                font-size: 11px;
+            }
+        }
+
+        /* ========== ACCESSIBILITY ========== */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* ========== SETTINGS BUTTON (header) ========== */
+        .settings-btn {
+            background: transparent;
+            border: 1.5px solid rgba(255,255,255,0.25);
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 5px 10px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: background 0.2s, border-color 0.2s;
+            margin-right: 8px;
+        }
+        .settings-btn:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.5); }
+        .settings-btn.has-key { border-color: #00c5ff; color: #00c5ff; }
+
+        /* ========== SETTINGS MODAL ========== */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .modal-overlay.open { display: flex; }
+
+        .settings-modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-xl);
+            width: 100%;
+            max-width: 420px;
+            padding: 28px 24px 24px;
+            position: relative;
+        }
+        .settings-modal h3 {
+            margin: 0 0 6px;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .settings-modal .modal-subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin: 0 0 20px;
+        }
+        .modal-close {
+            position: absolute;
+            top: 14px;
+            right: 16px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            color: var(--text-muted);
+            line-height: 1;
+            padding: 2px 6px;
+        }
+        .modal-close:hover { color: var(--text-main); }
+        .api-key-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .api-key-row input {
+            flex: 1;
+            font-family: 'Roboto Mono', monospace;
+            font-size: 13px;
+            letter-spacing: 0.5px;
+        }
+        .show-key-btn {
+            background: var(--bg-soft);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 6px 10px;
+            color: var(--text-muted);
+        }
+        .show-key-btn:hover { color: var(--text-main); }
+        .model-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .model-row label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+        .model-row select { font-size: 13px; }
+        .modal-save-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .modal-save-row button {
+            padding: 9px 22px;
+            background: var(--accent-color);
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        .modal-save-row button:hover { background: var(--accent-hover); }
+        .key-status {
+            font-size: 12px;
+            color: #10b981;
+            font-weight: 500;
+        }
+        .key-hint {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 8px;
+            line-height: 1.5;
+        }
+        .key-hint a { color: var(--accent-color); text-decoration: none; }
+
+        /* ========== GEMINI SCAN STATUS ========== */
+        .gemini-status {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 6px;
+            padding: 6px 10px;
+            background: var(--bg-soft);
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+        .gemini-status.show { display: flex; }
+        .gemini-status.success { color: #10b981; background: rgba(16,185,129,0.07); border-color: rgba(16,185,129,0.3); }
+        .gemini-status.error   { color: #ef4444; background: rgba(239,68,68,0.07); border-color: rgba(239,68,68,0.3); }
+        .gemini-spin { animation: spin 1s linear infinite; display: inline-block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <!-- ============== TOP BAR ============== -->
+    <header class="top-bar">
+        <span class="version-tag">v3.18</span>
+        <div style="display:flex;align-items:center;gap:0;">
+            <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
+                <span id="settingsIcon">⚙</span> AI Key
+            </button>
+            <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
+                <span class="icon" id="themeIcon">🌙</span>
+                <span id="themeLabel">Dark</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- ============== LOGO ============== -->
+    <div class="logo-wrapper">
+        <img src="logo.png" alt="India Business International - eCommerce for the World" class="company-logo" id="companyLogo">
+    </div>
+
+    <!-- ============== MAIN APP CARD ============== -->
+    <main class="app-card">
+        <div class="card-header">
+            <h1>IBI FILE RE-NAMER</h1>
+            <p>Automated PDF renaming for eCommerce documents</p>
+        </div>
+
+        <div class="card-body">
+
+            <!-- STEP 1: Pickup Date -->
+            <section class="step">
+                <h2 class="step-title"><span class="step-number">1</span> Set Pickup Date</h2>
+                <div class="form-field">
+                    <input type="date" id="pickupDate" aria-label="Pickup Date">
+                </div>
+            </section>
+
+            <!-- STEP 2: Upload PDF -->
+            <section class="step">
+                <h2 class="step-title"><span class="step-number">2</span> Upload PDF File</h2>
+                <div class="upload-zone" id="uploadZone">
+                    <div class="upload-icon">+</div>
+                    <h3>Drop PDF here or tap to browse</h3>
+                    <p>Invoice, Shipping Label, or Manifest</p>
+                    <input type="file" id="fileInput" accept="application/pdf,.pdf">
+                </div>
+
+                <!-- Status banner -->
+                <div class="status-banner" id="statusBanner">
+                    <span id="statusContent"></span>
+                </div>
+
+                <!-- Details panel (shown after parsing) -->
+                <div class="details-panel" id="detailsPanel">
+                    <div class="file-info">
+                        <div class="file-icon">PDF</div>
+                        <div class="file-meta">
+                            <div class="name" id="fileName">document.pdf</div>
+                            <div class="size" id="fileSize">0 KB</div>
+                        </div>
+                    </div>
+
+                    <!-- Document Type Toggle -->
+                    <div class="step" style="margin-bottom: 14px;">
+                        <h2 class="step-title"><span class="step-number">3</span> Document Type</h2>
+                        <div class="type-toggle">
+                            <button id="typeInvoice" class="active" data-type="invoice">📄 Invoice / Label</button>
+                            <button id="typeManifest" data-type="manifest">📋 Manifest</button>
+                        </div>
+                    </div>
+
+                    <!-- Editable Fields -->
+                    <div class="step" style="margin-bottom: 0;">
+                        <h2 class="step-title"><span class="step-number">4</span> Edit Detected Info</h2>
+
+                        <div class="form-row two-col">
+                            <div class="form-field">
+                                <label for="platform">eCommerce Platform</label>
+                                <select id="platform">
+                                    <option value="Amazon">Amazon</option>
+                                    <option value="Flipkart">Flipkart</option>
+                                    <option value="Shopsy">Shopsy</option>
+                                    <option value="Meesho">Meesho</option>
+                                    <option value="ShopClues">ShopClues</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label for="invoiceDate">Invoice / Manifest Date</label>
+                                <input type="date" id="invoiceDate">
+                            </div>
+                        </div>
+
+                        <!-- Invoice-specific fields -->
+                        <div id="invoiceFields">
+                            <div class="form-row two-col">
+                                <div class="form-field">
+                                    <label for="productName">Product Name</label>
+                                    <input type="text" id="productName" placeholder="e.g., Coir Brush" maxlength="60">
+                                </div>
+                                <div class="form-field">
+                                    <label for="quantity">Quantity</label>
+                                    <input type="number" id="quantity" min="1" value="1">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Manifest-specific fields -->
+                        <div id="manifestFields" style="display: none;">
+                            <div class="form-field">
+                                <label for="orderCount">Number of Orders</label>
+                                <input type="number" id="orderCount" min="1" value="1">
+                                <div id="orderCountWarn" style="display:none;font-size:11px;color:#f59e0b;margin-top:4px;">
+                                    ⚠ Order count not found in PDF — please enter manually.
+                                </div>
+                                <div class="gemini-status" id="geminiStatus"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Debug: View extracted PDF text -->
+                    <div class="debug-section">
+                        <button class="debug-toggle" id="debugToggle" type="button">
+                            <span id="debugCaret">▸</span> View extracted PDF text
+                        </button>
+                        <div class="debug-content" id="debugContent"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Filename Preview -->
+            <div class="filename-preview" id="filenamePreview" style="display: none;">
+                <span class="label">NEW FILENAME</span>
+                <span id="previewText">—</span>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button class="btn btn-primary" id="downloadBtn" disabled>
+                    ⬇ Download
+                </button>
+                <button class="btn btn-gdrive" id="driveBtn" disabled>
+                    ☁ Send to GDrive
+                </button>
+                <button class="btn btn-danger btn-clear-row" id="clearBtn">
+                    ✕ Clear All
+                </button>
+            </div>
+            <!-- Drive upload status -->
+            <div class="drive-status" id="driveStatus"></div>
+
+        </div>
+    </main>
+
+    <!-- ============== FOOTER ============== -->
+    <footer class="footer">
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.18</strong>
+    </footer>
+
+    <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
+    <div class="modal-overlay" id="settingsOverlay">
+        <div class="settings-modal">
+            <button class="modal-close" id="modalClose">✕</button>
+            <h3>⚙ Settings</h3>
+            <p class="modal-subtitle">Configure Gemini AI scanning and Google Drive upload.</p>
+
+            <!-- ── GEMINI SECTION ── -->
+            <div style="font-size:11px;font-weight:700;color:var(--accent-color);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;">
+                ⚡ Gemini AI — Manifest Scanner
+            </div>
+
+            <div class="form-field" style="margin-bottom:14px;">
+                <label for="geminiKeyInput" style="font-size:12px;font-weight:500;">Gemini API Key</label>
+                <div class="api-key-row">
+                    <input type="password" id="geminiKeyInput" placeholder="AIza..." autocomplete="off" spellcheck="false">
+                    <button class="show-key-btn" id="showKeyBtn" title="Show/hide key">👁</button>
+                </div>
+                <p class="key-hint">
+                    Get a free key at <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a>.
+                    Stored locally — never sent to any server other than Google.
+                </p>
+            </div>
+
+            <div class="model-row form-field" style="margin-bottom:18px;">
+                <label for="geminiModelSelect">Gemini Model</label>
+                <select id="geminiModelSelect">
+                    <option value="gemini-2.0-flash">gemini-2.0-flash (recommended)</option>
+                    <option value="gemini-1.5-flash">gemini-1.5-flash (stable)</option>
+                    <option value="gemini-1.5-pro">gemini-1.5-pro (accurate, slower)</option>
+                    <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (fastest)</option>
+                </select>
+            </div>
+
+            <!-- ── GDRIVE SECTION ── -->
+            <div style="font-size:11px;font-weight:700;color:#1a73e8;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;border-top:1px solid var(--border-color);padding-top:16px;">
+                ☁ Google Drive — Auto-Upload
+            </div>
+
+            <div class="form-field" style="margin-bottom:4px;">
+                <label for="gasUrlInput" style="font-size:12px;font-weight:500;">Apps Script Web App URL</label>
+                <input type="url" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec"
+                    autocomplete="off" spellcheck="false" style="font-size:12px;">
+                <p class="key-hint" style="margin-top:6px;">
+                    Deploy <code style="background:var(--bg-soft);padding:1px 4px;border-radius:3px;">IBI_FileRenamer_GDrive.gs</code>
+                    as a web app (Execute as: Me, Access: Anyone) and paste the <code style="background:var(--bg-soft);padding:1px 4px;border-radius:3px;">/exec</code> URL here.<br>
+                    Files are saved to: <strong>IBI Daily Orders / Orders DD Mon YYYY /</strong>
+                </p>
+            </div>
+
+            <div class="modal-save-row">
+                <button id="saveKeyBtn">Save All</button>
+                <span class="key-status" id="keyStatus"></span>
+            </div>
+        </div>
+    </div>
+
+<script>
+/* =================================================================
+   IBI FILE RE-NAMER v3.0
+   Robust PDF renaming for Amazon / Flipkart / Shopsy / Meesho / ShopClues
+   ================================================================= */
+
+// Set PDF.js worker
+if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// ----- State -----
+const state = {
+    file: null,
+    fileBuffer: null,
+    fullText: '',
+    pageTexts: [],         // individual page texts from PDF.js
+    docType: 'invoice',    // 'invoice' or 'manifest'
+    isMultiOrder: false,   // true when PDF has 2+ invoice pages (e.g. Sub_Order_Labels)
+    multiOrders: [],       // [{product, qty}, ...] when isMultiOrder
+    detected: {}
+};
+
+// ----- DOM refs -----
+const $ = id => document.getElementById(id);
+const themeToggle = $('themeToggle');
+const themeIcon = $('themeIcon');
+const themeLabel = $('themeLabel');
+const fileInput = $('fileInput');
+const uploadZone = $('uploadZone');
+const statusBanner = $('statusBanner');
+const statusContent = $('statusContent');
+const detailsPanel = $('detailsPanel');
+const fileName = $('fileName');
+const fileSize = $('fileSize');
+const platform = $('platform');
+const productName = $('productName');
+const quantity = $('quantity');
+const orderCount = $('orderCount');
+const orderCountWarn = $('orderCountWarn');
+const geminiStatus = $('geminiStatus');
+const invoiceDate = $('invoiceDate');
+const pickupDate = $('pickupDate');
+const typeInvoice = $('typeInvoice');
+const typeManifest = $('typeManifest');
+const invoiceFields = $('invoiceFields');
+const manifestFields = $('manifestFields');
+const filenamePreview = $('filenamePreview');
+const previewText = $('previewText');
+const downloadBtn = $('downloadBtn');
+const driveBtn    = $('driveBtn');
+const clearBtn    = $('clearBtn');
+const driveStatus = $('driveStatus');
+const debugToggle = $('debugToggle');
+const debugContent = $('debugContent');
+const debugCaret = $('debugCaret');
+
+// Debug viewer toggle
+debugToggle.addEventListener('click', () => {
+    const isOpen = debugContent.classList.toggle('show');
+    debugCaret.textContent = isOpen ? '▾' : '▸';
+});
+
+// =================== GEMINI SETTINGS ===================
+// API key and model stored in localStorage — never sent anywhere except Google's API.
+
+const GEMINI_KEY_STORE  = 'ibi_gemini_key';
+const GEMINI_MODEL_STORE = 'ibi_gemini_model';
+const GAS_URL_STORE      = 'ibi_gas_url';
+
+function getGeminiKey()   { try { return localStorage.getItem(GEMINI_KEY_STORE)  || ''; } catch { return ''; } }
+function getGeminiModel() { try { return localStorage.getItem(GEMINI_MODEL_STORE) || 'gemini-2.0-flash'; } catch { return 'gemini-2.0-flash'; } }
+function getGasUrl()      { try { return localStorage.getItem(GAS_URL_STORE)     || ''; } catch { return ''; } }
+
+// Reflect saved key/model/GAS URL in modal on open
+function refreshSettingsUI() {
+    const key   = getGeminiKey();
+    const model = getGeminiModel();
+    const gas   = getGasUrl();
+    $('geminiKeyInput').value  = key;
+    $('geminiModelSelect').value = model;
+    $('gasUrlInput').value     = gas;
+    const btn = $('settingsBtn');
+    const hasKey = !!key, hasGas = !!gas;
+    if (hasKey || hasGas) { btn.classList.add('has-key'); }
+    else                  { btn.classList.remove('has-key'); }
+    btn.title = [hasKey && 'Gemini ✓', hasGas && 'GDrive ✓'].filter(Boolean).join(' · ') || 'Settings';
+}
+
+// Settings modal open / close
+$('settingsBtn').addEventListener('click', () => {
+    refreshSettingsUI();
+    $('keyStatus').textContent = '';
+    $('settingsOverlay').classList.add('open');
+    $('geminiKeyInput').type = 'password';
+    $('showKeyBtn').textContent = '👁';
+});
+$('modalClose').addEventListener('click', () => $('settingsOverlay').classList.remove('open'));
+$('settingsOverlay').addEventListener('click', e => { if (e.target === $('settingsOverlay')) $('settingsOverlay').classList.remove('open'); });
+
+// Show/hide key
+$('showKeyBtn').addEventListener('click', () => {
+    const inp = $('geminiKeyInput');
+    if (inp.type === 'password') { inp.type = 'text';     $('showKeyBtn').textContent = '🙈'; }
+    else                         { inp.type = 'password'; $('showKeyBtn').textContent = '👁'; }
+});
+
+// Save all settings
+$('saveKeyBtn').addEventListener('click', () => {
+    const key   = $('geminiKeyInput').value.trim();
+    const model = $('geminiModelSelect').value;
+    const gas   = $('gasUrlInput').value.trim();
+    try {
+        if (key)  localStorage.setItem(GEMINI_KEY_STORE, key);
+        else      localStorage.removeItem(GEMINI_KEY_STORE);
+        localStorage.setItem(GEMINI_MODEL_STORE, model);
+        if (gas)  localStorage.setItem(GAS_URL_STORE, gas);
+        else      localStorage.removeItem(GAS_URL_STORE);
+        // Update GDrive button state immediately
+        driveBtn.disabled = !state.file || !gas;
+        $('keyStatus').textContent = '✓ Saved';
+        setTimeout(() => { $('keyStatus').textContent = ''; $('settingsOverlay').classList.remove('open'); }, 900);
+        refreshSettingsUI();
+    } catch { $('keyStatus').textContent = 'Storage error'; }
+});
+
+// Init settings button state on load
+refreshSettingsUI();
+
+// =================== GEMINI SCAN FUNCTIONS ===================
+
+// Render a PDF page to a JPEG base64 string using PDF.js canvas rendering.
+// scale=2 gives good quality without being too large for the API.
+async function renderPageToBase64(pdfDoc, pageNum, scale) {
+    const page    = await pdfDoc.getPage(pageNum || 1);
+    const viewport = page.getViewport({ scale: scale || 2.0 });
+    const canvas  = document.createElement('canvas');
+    canvas.width  = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+}
+
+// Call Gemini Vision API with a manifest page image.
+// Returns structured JSON: { orderCount, date, platform, courier }
+async function scanManifestWithGemini(base64Image, apiKey, model) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-2.0-flash'}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+    const prompt = `This is a shipping manifest PDF page from India Business International, an Indian eCommerce seller.
+
+Analyse the page carefully and return ONLY a valid JSON object with these fields:
+
+{
+  "orderCount": <integer — count data rows in the shipment table, NOT the header row. Look for S.No. column: 1, 2, 3... The highest S.No. number = orderCount>,
+  "date": "<string — date in DD-MM-YYYY format from the 'Date :' label, e.g. 29-05-2026. Return null if not found>",
+  "platform": "<string — one of: Meesho, Amazon, Flipkart, Shopsy, ShopClues. Infer from the manifest format. Meesho manifests have 'Pickup Executive Signature', 'Free Size', and 14-digit AWB numbers. Return null if unknown>",
+  "courier": "<string — courier name from 'Courier :' label, e.g. Delhivery. Return null if not found>"
+}
+
+Return ONLY the JSON object. No markdown, no explanation, no code blocks.`;
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents: [{
+                parts: [
+                    { inline_data: { mime_type: 'image/jpeg', data: base64Image } },
+                    { text: prompt }
+                ]
+            }],
+            generationConfig: { temperature: 0, maxOutputTokens: 512 }
+        })
+    });
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(`Gemini ${response.status}: ${err.error?.message || 'API error'}`);
+    }
+
+    const data = await response.json();
+    const raw  = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+    // Strip any markdown code fences Gemini might add despite instruction
+    const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    try { return JSON.parse(clean); }
+    catch {
+        const m = clean.match(/\{[\s\S]*\}/);
+        if (m) return JSON.parse(m[0]);
+        throw new Error('Could not parse Gemini response as JSON');
+    }
+}
+
+// Helper: parse DD-MM-YYYY string to HTML date input value (YYYY-MM-DD)
+function ddmmyyyyToInputDate(s) {
+    if (!s) return null;
+    const m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (!m) return null;
+    return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+}
+
+// Show/hide the Gemini scan status row below order count
+function setGeminiStatus(msg, type) {
+    geminiStatus.textContent = msg;
+    geminiStatus.className   = 'gemini-status show' + (type ? ' ' + type : '');
+    if (!msg) geminiStatus.className = 'gemini-status';
+}
+
+// =================== GDRIVE UPLOAD ===================
+
+/**
+ * Format HTML date input value ("2026-05-31") to folder date ("31 May 2026").
+ * The folder date matches the invoice/manifest date in the renamed filename.
+ */
+function inputDateToFolderDate(dateStr) {
+    if (!dateStr) {
+        const n = new Date();
+        return n.getDate() + ' ' + n.toLocaleString('en-GB', { month: 'long' }) + ' ' + n.getFullYear();
+    }
+    try {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const months = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+        return `${d} ${months[m - 1]} ${y}`;
+    } catch { return dateStr; }
+}
+
+/**
+ * Convert ArrayBuffer to base64 string.
+ * Uses Blob + FileReader to handle large PDFs without stack overflow.
+ */
+function arrayBufferToBase64(buffer) {
+    return new Promise((resolve, reject) => {
+        const blob = new Blob([buffer], { type: 'application/pdf' });
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+}
+
+/**
+ * Upload renamed PDF to Google Drive via the GAS web app.
+ * GAS creates: IBI Daily Orders / Orders {folderDate} / {filename}.pdf
+ */
+async function uploadToGDrive(pdfBuffer, filename, folderDate) {
+    const gasUrl = getGasUrl();
+    if (!gasUrl) throw new Error('GDrive URL not configured — add it in ⚙ Settings');
+
+    const pdfBase64 = await arrayBufferToBase64(pdfBuffer);
+
+    // Use text/plain Content-Type to avoid CORS preflight with GAS
+    const response = await fetch(gasUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body:    JSON.stringify({ filename, pdfBase64, folderDate })
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status} from GAS`);
+    const result = await response.json();
+    if (!result.success) throw new Error(result.error || 'GAS reported failure');
+    return result;   // { fileId, fileUrl, folderUrl, folder, filename }
+}
+
+// ── GDrive button handler ──
+driveBtn.addEventListener('click', async () => {
+    if (!state.file || !state.fileBuffer) {
+        setDriveStatus('No PDF loaded.', 'error'); return;
+    }
+    const gasUrl = getGasUrl();
+    if (!gasUrl) {
+        setDriveStatus('GDrive URL not set — open ⚙ Settings and paste your Apps Script /exec URL.', 'error'); return;
+    }
+
+    const filename   = buildFileName();
+    const folderDate = inputDateToFolderDate(invoiceDate.value);
+
+    driveBtn.disabled = true;
+    driveBtn.innerHTML = '<span class="gemini-spin">⟳</span> Uploading…';
+    setDriveStatus('☁ Uploading to Google Drive…', '');
+
+    try {
+        const result = await uploadToGDrive(state.fileBuffer, filename, folderDate);
+        const fileLink   = result.fileUrl   ? `<a href="${result.fileUrl}"   target="_blank">Open file</a>`   : '';
+        const folderLink = result.folderUrl ? `<a href="${result.folderUrl}" target="_blank">Open folder</a>` : '';
+        setDriveStatus(
+            `✓ Saved to <strong>IBI Daily Orders / ${result.folder}</strong>${fileLink ? ' · ' + fileLink : ''}${folderLink ? ' · ' + folderLink : ''}`,
+            'success'
+        );
+    } catch (err) {
+        console.error('GDrive upload error:', err);
+        setDriveStatus('✕ Upload failed: ' + err.message, 'error');
+    } finally {
+        driveBtn.disabled = !getGasUrl();
+        driveBtn.innerHTML = '☁ Send to GDrive';
+    }
+});
+
+function setDriveStatus(html, type) {
+    driveStatus.innerHTML = html;
+    driveStatus.className = 'drive-status show' + (type ? ' ' + type : '');
+}
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (theme === 'dark') {
+        themeIcon.textContent = '☀';
+        themeLabel.textContent = 'Light';
+    } else {
+        themeIcon.textContent = '🌙';
+        themeLabel.textContent = 'Dark';
+    }
+    try { localStorage.setItem('ibi-renamer-theme', theme); } catch (e) {}
+}
+
+themeToggle.addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme') || 'light';
+    applyTheme(cur === 'dark' ? 'light' : 'dark');
+});
+
+// Initial theme
+try {
+    const saved = localStorage.getItem('ibi-renamer-theme');
+    applyTheme(saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+} catch (e) {
+    applyTheme('light');
+}
+
+// =================== STATUS BANNER ===================
+function showStatus(message, type = 'info', spinner = false) {
+    statusBanner.className = 'status-banner show ' + type;
+    statusContent.innerHTML = (spinner ? '<span class="spinner"></span>' : '') +
+        '<span>' + message + '</span>';
+    statusBanner.innerHTML = '';
+    statusBanner.appendChild(statusContent);
+    if (spinner) {
+        const sp = document.createElement('span');
+        sp.className = 'spinner';
+        statusBanner.insertBefore(sp, statusContent);
+    }
+}
+
+function hideStatus() {
+    statusBanner.className = 'status-banner';
+}
+
+// =================== DEFAULT DATES ===================
+function todayStr() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return yyyy + '-' + mm + '-' + dd;
+}
+
+pickupDate.value = todayStr();
+invoiceDate.value = todayStr();
+
+// =================== DATE HELPERS ===================
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatDateLong(dateStr) {
+    // dateStr: yyyy-mm-dd  ->  "23 May 2026"
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return '';
+    const yyyy = parts[0], mm = parseInt(parts[1], 10), dd = parseInt(parts[2], 10);
+    if (!yyyy || !mm || !dd) return '';
+    return dd + ' ' + MONTHS_SHORT[mm - 1] + ' ' + yyyy;
+}
+
+function formatDateShort(dateStr) {
+    // dateStr: yyyy-mm-dd  ->  "23 May"
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length !== 3) return '';
+    const mm = parseInt(parts[1], 10), dd = parseInt(parts[2], 10);
+    if (!mm || !dd) return '';
+    return dd + ' ' + MONTHS_SHORT[mm - 1];
+}
+
+// Extract date from text in many formats
+// Returns ISO string yyyy-mm-dd, or null
+// =================== DATE EXTRACTION ===================
+// Helper: parse a regex match into {day, monthNum, year} based on capture group shape
+function _parseDateMatch(m, fallbackYear) {
+    let day, monthNum, year;
+    if (/^\d+$/.test(m[1]) && /^\d+$/.test(m[2])) {
+        // numeric dd mm yyyy / dd-mm-yy
+        day = parseInt(m[1], 10);
+        monthNum = parseInt(m[2], 10);
+        year = m[3] ? parseInt(m[3], 10) : (fallbackYear || new Date().getFullYear());
+    } else if (/^\d+$/.test(m[1])) {
+        // dd MonthName yyyy
+        day = parseInt(m[1], 10);
+        monthNum = monthIndex(m[2]) + 1;
+        year = parseInt(m[3], 10);
+    } else {
+        // MonthName dd yyyy
+        monthNum = monthIndex(m[1]) + 1;
+        day = parseInt(m[2], 10);
+        year = parseInt(m[3], 10);
+    }
+    if (year < 100) year += 2000;
+    if (day >= 1 && day <= 31 && monthNum >= 1 && monthNum <= 12 && year >= 2020 && year <= 2099) {
+        return toIso(year, monthNum, day);
+    }
+    return null;
+}
+
+function extractDate(text) {
+    if (!text) return null;
+    const monthsRe = '(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*';
+
+    // PASS 1: STRICT "Invoice Date" only — user explicitly prefers Invoice Date over Order Date
+    const invoicePatterns = [
+        /\binvoice\s+date\s*[:\-]?\s*(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})/i,
+        new RegExp('\\binvoice\\s+date\\s*[:\\-]?\\s*(\\d{1,2})\\s+' + monthsRe + '[\\s,]+(\\d{2,4})', 'i'),
+        new RegExp('\\binvoice\\s+date\\s*[:\\-]?\\s*' + monthsRe + '\\s+(\\d{1,2})[\\s,]+(\\d{2,4})', 'i')
+    ];
+    for (const re of invoicePatterns) {
+        const m = text.match(re);
+        if (m) {
+            const r = _parseDateMatch(m);
+            if (r) return r;
+        }
+    }
+
+    // PASS 2: Other date labels (Order Date, manifest, etc.)
+    const labelPatterns = [
+        // Numeric format with explicit labels
+        /(?:order\s+date|date\s+of\s+invoice|invoice\s+dt|bill\s+date|shipment\s+date|manifest\s+date|generated\s+on)\s*[:\-]?\s*(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})/i,
+        // Bare "Date : 24/05/2026" (Meesho manifest format — no "Manifest" prefix)
+        /(?:^|[^a-z])\bdate\s*[:\-]\s*(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})/i,
+        // Month-name format with labels
+        new RegExp('(?:order\\s+date|manifest\\s+date|\\bdate)\\s*[:\\-]?\\s*(\\d{1,2})\\s+' + monthsRe + '[\\s,]+(\\d{2,4})', 'i'),
+        new RegExp('(?:order\\s+date|manifest\\s+date|generated\\s+on)\\s*[:\\-]?\\s*' + monthsRe + '\\s+(\\d{1,2})[\\s,]+(\\d{2,4})', 'i')
+    ];
+    for (const re of labelPatterns) {
+        const m = text.match(re);
+        if (m) {
+            const r = _parseDateMatch(m);
+            if (r) return r;
+        }
+    }
+
+    // PASS 3: Generic dd/mm/yyyy without label — first reasonable match
+    const genericPatterns = [
+        /\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})\b/g,
+        /\b(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})\b/g,
+        new RegExp('\\b(\\d{1,2})[\\s\\-]+' + monthsRe + '[\\s\\-,]+(\\d{2,4})\\b', 'gi'),
+        new RegExp('\\b' + monthsRe + '\\s+(\\d{1,2})[\\s,]+(\\d{2,4})\\b', 'gi')
+    ];
+    for (const re of genericPatterns) {
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            const r = _parseDateMatch(m);
+            if (r) return r;
+        }
+    }
+
+    return null;
+}
+
+// Extract ship/despatch/pickup date — what goes in the "D <date>" portion of filename.
+// Different from Invoice Date: this is when the package physically leaves.
+//   Amazon:   "Ship Date: 25/05/2026" on shipping label
+//   Flipkart: "HBD: 25 - 05" (Handover By Date — year often omitted, infer from invoice)
+//             Also "Printed at 1011 hrs, 25/05/26" on label
+//   Meesho:   manifest "Date : 24 May, 2026"
+//   Flipkart manifest: "Generated on: May 25, 2026"
+// `fallbackYear` is used when label dates omit the year (Flipkart HBD).
+function extractPickupDate(text, fallbackYear) {
+    if (!text) return null;
+    const monthsRe = '(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*';
+
+    const patterns = [
+        // Amazon: "Ship Date: 25/05/2026"
+        /\bship(?:ment)?\s+date\s*[:\-]?\s*(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})/i,
+        // Despatch / Dispatch Date
+        /\b(?:despatch|dispatch|pickup)\s+date\s*[:\-]?\s*(\d{1,2})[\/\-\.\s](\d{1,2})[\/\-\.\s](\d{2,4})/i,
+        // Flipkart label: "HBD: 25 - 05" or "HBD: 25-05-2026"
+        /\bhbd\s*[:\-]?\s*(\d{1,2})\s*[\-\/\.\s]+\s*(\d{1,2})(?:\s*[\-\/\.\s]+\s*(\d{2,4}))?/i,
+        // Flipkart label: "Printed at NNNN hrs, dd/mm/yy"
+        /\bprinted\s+at\s+\d+\s+hrs?\s*,\s*(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/i,
+        // Flipkart manifest: "Generated on: May 25, 2026"
+        new RegExp('\\bgenerated\\s+on\\s*[:\\-]?\\s*' + monthsRe + '\\s+(\\d{1,2})[\\s,]+(\\d{2,4})', 'i'),
+        // Meesho manifest: "Date : 24 May, 2026"
+        new RegExp('(?:^|[^a-z])date\\s*[:\\-]\\s*(\\d{1,2})\\s+' + monthsRe + '[\\s,]+(\\d{2,4})', 'i')
+    ];
+
+    for (const re of patterns) {
+        const m = text.match(re);
+        if (m) {
+            const r = _parseDateMatch(m, fallbackYear);
+            if (r) return r;
+        }
+    }
+
+    return null;
+}
+
+function monthIndex(monthStr) {
+    const s = monthStr.toLowerCase().substring(0, 3);
+    return MONTHS_SHORT.findIndex(m => m.toLowerCase() === s);
+}
+
+function toIso(y, m, d) {
+    return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
+
+// =================== PLATFORM DETECTION ===================
+// Uses a weighted scoring system combining PDF text signals (corporate
+// entities, brand mentions, domains, ID patterns) with filename hints
+// (user's naming convention like "sqtrayflp.pdf" -> Flipkart).
+// Scores are stored in state.platformScores for the debug panel.
+
+function detectPlatform(text, filename) {
+    const t = (text || '').toLowerCase();
+    const fname = (filename || '').toLowerCase().replace(/\.[^.]+$/, '');
+
+    const scores = { Amazon: 0, Flipkart: 0, Shopsy: 0, Meesho: 0, ShopClues: 0 };
+
+    // count helper — case-insensitive, global, capped to avoid runaway scores
+    const count = (pattern, cap = 99) => {
+        const re = new RegExp(pattern, 'gi');
+        const n = (t.match(re) || []).length;
+        return cap === 99 ? n : Math.min(n, cap);
+    };
+
+    // ===== TIER 1: Strong unique brand names (essentially auto-win) =====
+    // These names are extremely unlikely to appear on any other platform's
+    // documents, so a single mention should beat parent-company mentions
+    // (e.g. Shopsy invoices show "Flipkart Internet Private Limited" since
+    // Shopsy is owned by Flipkart — Shopsy must still win).
+    scores.Shopsy    += count('shopsy', 5) * 120;
+    scores.Meesho    += count('meesho', 5) * 120;
+    scores.ShopClues += count('shopclues', 5) * 120;
+
+    // ===== TIER 2: Corporate / legal entity names (very strong) =====
+    // These appear on every legitimate invoice as the seller/operator entity.
+    scores.Flipkart += count('flipkart\\s+internet\\s+private\\s+limited') * 100;
+    scores.Flipkart += count('flipkart\\s+india\\s+(?:private\\s+)?(?:limited|pvt)') * 80;
+    scores.Flipkart += count('instakart\\s+services') * 80;
+    scores.Flipkart += count('ekart\\s+logistics') * 80;
+
+    scores.Amazon += count('amazon\\s+seller\\s+services(?:\\s+private\\s+limited)?') * 100;
+    scores.Amazon += count('amazon\\s+logistics') * 80;
+    scores.Amazon += count('amazon\\s+transportation\\s+services') * 80;
+    scores.Amazon += count('amazon\\s+development\\s+centre') * 70;
+
+    // Meesho has multiple legal entities (renamed/restructured over time)
+    scores.Meesho += count('fashnear\\s+technologies') * 100;        // legacy name
+    scores.Meesho += count('mohalla\\s+tech') * 100;                 // current parent
+    scores.Meesho += count('meesho\\s+(?:private|technologies|supply)') * 80;
+    scores.Meesho += count('\\bvalmo\\b') * 70;                       // Meesho's logistics arm
+
+    scores.ShopClues += count('clues\\s+network\\s+private') * 100;
+
+    // ===== TIER 3: Brand mentions (medium weight, capped) =====
+    scores.Flipkart += count('flipkart', 5) * 20;
+    scores.Flipkart += count('ekart', 5) * 18;
+    scores.Flipkart += count('instakart', 3) * 25;
+
+    scores.Amazon += count('amazon', 5) * 20;
+    scores.Amazon += count('amzn', 3) * 25;
+
+    // ===== TIER 4: Domain mentions =====
+    scores.Flipkart  += count('flipkart\\.com') * 40;
+    scores.Amazon    += count('amazon\\.in') * 40;
+    scores.Amazon    += count('amzn\\.in') * 40;
+    scores.Meesho    += count('meesho\\.com') * 40;
+    scores.Shopsy    += count('shopsy\\.in') * 40;
+    scores.ShopClues += count('shopclues\\.com') * 40;
+
+    // ===== TIER 5: Platform-specific ID patterns & terminology =====
+    scores.Flipkart += count('\\bfsn\\s*[:\\-]') * 30;   // Flipkart Serial Number
+    scores.Flipkart += count('\\bfk[a-z0-9]{8,}') * 15;  // FK tracking IDs
+    scores.Amazon   += count('\\basin\\s*[:\\-]') * 30;  // Amazon Standard ID
+    scores.Amazon   += count('fulfillment\\s+by\\s+amazon|\\bfba\\b') * 25;
+
+    // Meesho-specific terminology — useful when label has no brand text
+    scores.Meesho   += count('\\bsub[\\s\\-]?order(?:\\s+(?:id|no\\.?))?') * 40;  // "Sub Order ID"
+    scores.Meesho   += count('\\breseller\\b') * 30;                              // Meesho's customer-side label
+    scores.Meesho   += count('supplier\\s+(?:address|details|name|id)') * 20;
+    scores.Meesho   += count('drop\\s+address') * 15;
+
+    // ===== TIER 5b: HIGH-CONFIDENCE STRUCTURAL FINGERPRINTS =====
+    // Meesho invoice/label PDFs often don't contain the word "meesho" at all —
+    // they show "Delhivery" + a specific page structure. These structural markers
+    // are highly distinctive and rarely appear on Amazon/Flipkart documents.
+    scores.Meesho   += count('pickup\\s+destination\\s+code') * 90;   // Meesho-specific Delhivery pickup terminology
+    scores.Meesho   += count('return\\s+code\\s+\\d{6}\\s*,\\s*\\d{6}') * 80;  // "Return Code <PIN>,<PIN>" — Meesho-only format
+    scores.Meesho   += count('purchase\\s+order\\s+no\\.?\\s+\\d{17,}') * 70;  // Meesho's 18-digit purchase orders
+    scores.Meesho   += count('\\b289\\d{15,17}\\b') * 30;              // Meesho order numbers start with 289
+    scores.Meesho   += count('\\b14908[3-4]\\d{10,11}\\b') * 25;       // Delhivery AWBs (Meesho's courier) start with 14908x
+    scores.Meesho   += count('pickup\\s*executive\\s*signature') * 80; // Meesho manifest signature line
+    scores.Meesho   += count('for\\s+india\\s+business\\s*international') * 15; // Meesho manifest seller block
+
+    // Flipkart + Shopsy shared E-Kart logistics infrastructure.
+    // IMPORTANT: Shopsy uses Flipkart's E-Kart backend — both have FMPC tracking IDs,
+    // OD order numbers, and "B4 E-Kart Logistics" labels. Adding these signals
+    // to Flipkart ONLY was causing Shopsy PDFs to be misclassified as Flipkart.
+    // The actual brand word ("shopsy" vs "flipkart") and the "Ordered through" phrase
+    // differentiate them — see exclusive patterns below.
+    const eKartScore = (
+        count('\\bfm(?:pc|pp)\\d{8,}') * 60 +               // FMPC / FMPP tracking IDs (both E-Kart formats)
+        count('\\bod\\d{18,}') * 50 +                        // 18+ digit OD order ID
+        count('e[\\-\\s]?kart\\s+logistics') * 60 +          // E-Kart Logistics header
+        count('\\bb\\d\\s+e[\\-\\s]?kart') * 70              // "B2 E-Kart" / "B4 E-Kart" / "B6 E-Kart" label
+    );
+    scores.Flipkart += eKartScore;
+    scores.Shopsy   += eKartScore;  // shared infrastructure — equal baseline
+
+    // Flipkart-specific invoice header — also used by Shopsy (shared E-Kart backend)
+    const taxInvoiceOd = count('tax\\s+invoice\\s+order\\s+id\\s*:?\\s*od') * 70;
+    scores.Flipkart += taxInvoiceOd;
+    scores.Shopsy   += taxInvoiceOd;  // Shopsy invoices use identical "Tax Invoice Order Id: OD..." format
+
+    // Exclusive "Ordered through <brand>" phrases — high-weight differentiators.
+    // Flipkart PDFs have "Ordered through [Flipkart logo] Flipkart".
+    // Shopsy PDFs have "Ordered through [S logo] shopsy".
+    scores.Flipkart += count('ordered\\s+through\\s+(?:a\\s+)?flipkart') * 220;
+    scores.Shopsy   += count('ordered\\s+through\\s+(?:s\\s+)?shopsy') * 220;
+
+    // Flipkart-exclusive invoice number format: LWA[A-Z]{2-4}[0-9]{6+}
+    // e.g. "LWACJIC270000201", "LWAYBA123456" — unique to Flipkart, not used by Shopsy.
+    scores.Flipkart += count('\\blwa[a-z]{2,4}\\d{6,}') * 80;
+
+    // ===== TIER 6: Filename pattern detection =====
+
+    // 6a. PLATFORM-GENERATED FILENAMES (very high confidence)
+    // Each platform generates downloads with distinctive filename patterns.
+    // These are essentially unique fingerprints — no other platform uses them.
+    const platformFilePatterns = [
+        // Meesho's bulk-download filenames
+        { platform: 'Meesho',   re: /sub[_\-]?order[_\-]?labels?/i,         weight: 100 },
+        { platform: 'Meesho',   re: /forward[_\-]?tracking/i,                weight: 80  },
+        { platform: 'Meesho',   re: /reverse[_\-]?tracking/i,                weight: 80  },
+        { platform: 'Meesho',   re: /^meesho[\s_\-]/i,                       weight: 80  },
+        { platform: 'Meesho',   re: /meesho[_\-]?(?:invoice|label|manifest)/i, weight: 100 },
+        // Amazon
+        { platform: 'Amazon',   re: /^amazon[\s_\-]/i,                       weight: 80  },
+        { platform: 'Amazon',   re: /\b(?:008|028|171|402|403|404|405|406|407|408|409|171)\-\d{7}\-\d{7}/i, weight: 90 },
+        { platform: 'Amazon',   re: /\bfba[\s_\-]/i,                         weight: 60  },
+        // Flipkart — space/underscore/hyphen all valid separators in user-renamed files
+        { platform: 'Flipkart', re: /^flipkart[\s_\-]/i,                     weight: 80  },
+        { platform: 'Flipkart', re: /flipkart[_\-]?(?:invoice|label|manifest)/i, weight: 100 },
+        { platform: 'Flipkart', re: /\bod\d{15,}/i,                          weight: 60  },
+        // Shopsy — space/underscore/hyphen all valid separators
+        { platform: 'Shopsy',   re: /^shopsy[\s_\-]/i,                       weight: 100 },
+        // ShopClues
+        { platform: 'ShopClues',re: /^shopclues[\s_\-]/i,                    weight: 80  }
+    ];
+    for (const p of platformFilePatterns) {
+        if (p.re.test(fname)) scores[p.platform] += p.weight;
+    }
+
+    // 6b. USER NAMING CONVENTION HINTS (moderate weight — your custom codes)
+    const nameHints = [
+        { platform: 'Flipkart',  re: /(?:flipkart|fkt|^flp|flp$|[_\-]flp|flp[_\-])/i },
+        { platform: 'Amazon',    re: /(?:amazon|amzn|^amz|amz$|[_\-]amz|amz[_\-])/i },
+        { platform: 'Shopsy',    re: /(?:shopsy|^sps|sps$|[_\-]sps|sps[_\-])/i },
+        { platform: 'Meesho',    re: /(?:meesho|msho|^msh|msh$|[_\-]msh|msh[_\-]|^mes|mes$|[_\-]mes|mes[_\-])/i },
+        { platform: 'ShopClues', re: /(?:shopclues|^sc$|[_\-]sc[_\-])/i }
+    ];
+    for (const h of nameHints) {
+        if (h.re.test(fname)) scores[h.platform] += 35;
+    }
+
+    // ===== Find winner =====
+    // Iterate in priority order so that on ties, more specific platforms win.
+    // Shopsy is placed AFTER Flipkart because:
+    //   - In tie situations (equal eKartScore, no visible brand text), Flipkart is far
+    //     more common than Shopsy and should be the default.
+    //   - Shopsy always wins when genuine Shopsy signals fire: "shopsy" word (+120×count),
+    //     "ordered through shopsy" (+220), or shopsy filename prefix (+100).
+    //   - Meesho and ShopClues remain before Flipkart since they have completely
+    //     different infrastructure signals and there's no cross-confusion.
+    const priority = ['Meesho', 'ShopClues', 'Flipkart', 'Shopsy', 'Amazon'];
+    let winner = null, maxScore = 0;
+    for (const p of priority) {
+        if (scores[p] > maxScore) {
+            maxScore = scores[p];
+            winner = p;
+        }
+    }
+
+    // Store scores for debug visibility
+    state.platformScores = scores;
+    state.platformConfidence = maxScore;
+
+    // If nothing scored at all, return empty so user picks manually.
+    // (Previously defaulted to Amazon, which caused Meesho/Flipkart PDFs lacking
+    //  brand-name text to be mis-classified as Amazon. v3.8 fix.)
+    if (maxScore === 0) {
+        return '';
+    }
+
+    return winner;
+}
+
+// =================== DOC TYPE DETECTION ===================
+function detectDocType(text) {
+    const t = text.toLowerCase();
+    // Manifest indicators
+    if (/\bmanifest\b/.test(t) ||
+        /pickup\s+manifest/.test(t) ||
+        /shipment\s+manifest/.test(t) ||
+        /handover\s+manifest/.test(t) ||
+        /total\s+shipments?\s*[:\-]?\s*\d/.test(t) ||
+        /total\s+orders?\s*[:\-]?\s*\d/.test(t) ||
+        // Meesho manifest indicators (no "manifest" keyword in text)
+        /pickup\s*executive\s*signature/.test(t) ||
+        /\bs\.?\s*no\.?\s+sub\s*order\s+no\.?\s+awb/.test(t) ||
+        /supplier\s+name\s*:[\s\S]{0,200}?courier\s*:/.test(t) ||
+        /courier\s*:[\s\S]{0,200}?supplier\s+name\s*:/.test(t)) {
+        return 'manifest';
+    }
+    return 'invoice';
+}
+
+// =================== PRODUCT NAME EXTRACTION ===================
+// Multi-strategy extraction to pull the ACTUAL product name from the PDF text.
+// Falls back to short keyword names only if nothing else works.
+
+// Words/labels that mark the END of a product name in invoices/labels
+const PRODUCT_STOPWORDS = '(?:HSN\\s*[:/-]?|HSN\\s*Code|SKU|ASIN|FSN|SAC|Qty|Quantity|Unit\\s+Price|Rate|Amount|Tax|GST|IGST|CGST|SGST|MRP|Total|Discount|Net\\s+Amount|Gross|Sl\\.?\\s*No\\.?|S\\.?\\s*No\\.?|FK[A-Z0-9]{6,}|₹|Rs\\.?\\s*\\d|Inv\\s+No|Invoice\\s+No|Order\\s+ID|Order\\s+Date|Tracking|AWB|Weight|Dimensions|Color|Size|Pack\\s+of|Product\\s+Code|Item\\s+Code|EAN|UPC|Brand|Made\\s+in)';
+
+function trimAtStopwords(text) {
+    if (!text) return '';
+    // Match stopword preceded by either whitespace OR digits-with-no-space (e.g. "2Qty")
+    // Use global flag so we can skip a match at position 0 and find later ones.
+    const re = new RegExp('(?:\\s+|^|(?<=\\d))(?:\\d+\\s*)?' + PRODUCT_STOPWORDS + '\\b', 'gi');
+    let m;
+    while ((m = re.exec(text)) !== null) {
+        // Skip if the match is at the very start — that's leading junk
+        // which cleanCandidate handles separately.
+        if (m.index > 0) {
+            return text.substring(0, m.index).trim();
+        }
+        if (re.lastIndex === m.index) re.lastIndex++; // safety
+    }
+    return text.trim();
+}
+
+function cleanCandidate(s) {
+    if (!s) return '';
+    s = s.replace(/\s+/g, ' ').trim();
+
+    // -------- STRIP LEADING JUNK (iterative, multiple passes) --------
+    // Invoice/label tables often dump column headers and serial/qty cells
+    // in front of the actual product name. Strip them off.
+    for (let pass = 0; pass < 6; pass++) {
+        const before = s;
+
+        // "Qty 1 ", "QTY: 1 ", "Quantity 1 "
+        s = s.replace(/^(?:qty|quantity)\s*[:\-]?\s*\d+\s+/i, '').trim();
+        // "1 Qty ", "1Qty ", "1 Quantity "
+        s = s.replace(/^\d+\s*(?:qty|quantity)\b\s*/i, '').trim();
+        // Bare leading "Qty ", "Quantity "
+        s = s.replace(/^(?:qty|quantity)\s+/i, '').trim();
+        // "Sl. No 1 ", "S.No: 1 ", "Sl No 1 "
+        s = s.replace(/^(?:sl\.?\s*no\.?|s\.?\s*no\.?)\s*[:\-]?\s*\d+\s+/i, '').trim();
+        // "1. ", "1) ", "1 - ", "1: "
+        s = s.replace(/^\d+\s*[\.\)\-:]\s*/, '').trim();
+        // Leading column header words: "Description", "Product", "Item", "Title",
+        // "Products", "Items", "Unit Price", "Net Amount", "Tax Rate", "Gross", "Amount"
+        s = s.replace(/^(?:descriptions?|products?|items?|titles?|particulars?|unit\s+price|net\s+amount|tax\s+rate|gross(?:\s+amount)?|amount|rate|mrp)\s+/i, '').trim();
+        // Leading HSN/SKU/ASIN with code
+        s = s.replace(/^(?:hsn|sku|asin|fsn|sac)\s*[:\-]?\s*[A-Z0-9]+\s+/i, '').trim();
+
+        if (s === before) break;
+    }
+
+    // -------- STRIP TRAILING JUNK --------
+    // ShopClues appends "Ref:<text>" after the product name (a reference/SKU field).
+    // It may be preceded by "..." (ShopClues truncates long names in PDF with ellipsis).
+    // e.g. "Tapioca Cassava Stem Cut... Ref:Tapioca Cassava Stem 1" → "Tapioca Cassava Stem Cut"
+    s = s.replace(/\s*\.{2,}\s*Ref\s*:.*$/i, '').trim();   // "...  Ref:..." → strip both
+    s = s.replace(/\s+Ref\s*:.*$/i, '').trim();              // " Ref:..." → strip (no ellipsis)
+    // Trailing ellipsis (ShopClues PDF name truncation)
+    s = s.replace(/\.{2,}$/, '').trim();
+    // Trailing "2Qty", "2 Qty", "12 Quantity"
+    s = s.replace(/\s*\d+\s*(?:qty|quantity)\b.*$/i, '').trim();
+    // Trailing "Qty 2", "Qty: 2", "Quantity 5"
+    s = s.replace(/\s*(?:qty|quantity)\s*[:\-]?\s*\d+.*$/i, '').trim();
+    // Trailing HSN/SAC code like " HSN 9603" or " HSN: 9603"
+    s = s.replace(/\s*(?:hsn|sac|sku|asin|fsn)\s*[:\-]?\s*[A-Z0-9]+.*$/i, '').trim();
+    // Trailing standalone 4+ digit code (HSN-like)
+    s = s.replace(/\s+\d{4,}.*$/, '').trim();
+    // Trailing currency amount
+    s = s.replace(/\s*(?:rs\.?|₹|inr|mrp)\s*[\d,.]+.*$/i, '').trim();
+    // Trailing GST/Tax mentions
+    s = s.replace(/\s*(?:gst|igst|cgst|sgst|tax|total|discount).*$/i, '').trim();
+
+    // -------- FINAL CLEANUP --------
+    s = s.replace(/^[\d\s\-,.|:•·*#]+/, '').trim();
+    s = s.replace(/[\s,.\-|:•·*#]+$/, '').trim();
+    s = s.replace(/\s+/g, ' ').trim();
+
+    return s;
+}
+
+function isReasonableProductName(s) {
+    if (!s) return false;
+    if (s.length < 4 || s.length > 120) return false;
+    // Should contain at least one letter
+    if (!/[A-Za-z]{3,}/.test(s)) return false;
+    // Reject if it's mostly digits/symbols
+    const letterCount = (s.match(/[A-Za-z]/g) || []).length;
+    if (letterCount < s.length * 0.4) return false;
+    // Reject generic non-product phrases
+    if (/^(?:invoice|tax|order|shipment|manifest|address|customer|seller|buyer|details|terms|conditions|page|date|total|amount|rupees|note)\b/i.test(s)) return false;
+    // v3.9: Reject pure column-header captures (when Strategy 0a accidentally captures
+    // a header word instead of the product, the result should fall through to next strategy)
+    if (/^(?:unit\s+price|unitprice|net\s+amount|netamount|tax\s+rate|tax\s+type|tax\s+amount|total\s+amount|gross\s+amount|gross|taxable\s+value|product\s+code|item\s+code|hsn(?:\s+code)?|sku(?:\s+id)?|fsn|asin|sac|igst|cgst|sgst|cess|quantity|qty|discount|rate|type|price|subtotal|handling\s+fee)\s*$/i.test(s.trim())) return false;
+    return true;
+}
+
+// Strip IBI brand variations from extracted product text.
+// User explicitly requested: remove iINTELLIGENCEi, IBI, India Business International, etc.
+function stripBrandPrefixes(s) {
+    if (!s) return '';
+    let r = s;
+    const brands = [
+        /\biINTELLIGENCEi\b/gi,
+        /\bIINTELLIGENCEI\b/gi,
+        /\biINTELLIGENCE\b/gi,
+        /\bIINTELLIGENCE\b/gi,
+        /\bINTELLIGENCEi\b/gi,
+        /\bINTELLIGENCE(?!\w)/gi,
+        /\bINDIA\s+BUSINESS\s+INTERNATIONAL\b/gi,
+        /\bIndiaBusinessInternatl?\b/gi,
+        /\bINDIABUSINESSINTERNATIONAL\b/gi,
+        /\bIBI\b/gi
+    ];
+    for (const re of brands) r = r.replace(re, ' ');
+    // Clean leftover pipes, collapse spaces, strip leading/trailing punctuation
+    r = r.replace(/\s*\|\s*/g, ' ').replace(/\s+/g, ' ').trim();
+    r = r.replace(/^[\s\-,.|:•·*#]+/, '').replace(/[\s\-,.|:•·*#]+$/, '').trim();
+    return r;
+}
+
+function detectProductName(text) {
+    if (!text) return '';
+
+    // Normalize: collapse all whitespace including newlines
+    const normalized = text.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // Helper: clean + strip brand + validate. Returns null if not reasonable.
+    const tryReturn = (raw) => {
+        if (!raw) return null;
+        const c = stripBrandPrefixes(cleanCandidate(trimAtStopwords(raw)));
+        return isReasonableProductName(c) ? c : null;
+    };
+
+    // ===== Strategy 0a: Description/Product column-start =====
+    // Handles all platform invoice table formats:
+    //   Amazon:      "Description UnitPrice Qty NetAmount Tax Rate ... 1 ProductName, ..."
+    //   Flipkart:    "Product Description Qty Gross Amount ... IBI ProductName | ..."
+    //   Meesho:      "Description HSN Qty Gross Amount ... Taxes Total ProductName, ..."
+    //   ShopClues:   "Product Qty Price Total ProductName, 50 Qty. ..."
+    // Captures product name after consuming column headers, stops at first comma or pipe.
+    // Brand-stripped result must pass isReasonableProductName to be returned.
+    {
+        const m = normalized.match(/\b(?:description|product)\b(?:\s+(?:description|price|hsn|unitprice|unit\s+price|netamount|net\s+amount|qty|quantity|gross\s*amount|gross|amount|discount|taxable\s+value|tax(?:es)?|igst|cgst|sgst|cess|type|total|rate))+\s+(?:\d+\.?\s+)?([A-Za-z][^,|]{3,150})/i);
+        if (m) {
+            const c = tryReturn(m[1]);
+            if (c) return c;
+        }
+    }
+
+    // ===== Strategy 0b: Amazon parenthetical-before-HSN =====
+    // Example: "( Coir Brush 6 Qty ) HSN:56090010" → "Coir Brush"
+    // Example: "( Al Uruli BIS Marked, without Lid, 1 Qty ) HSN:76151030" → "Al Uruli BIS Marked"
+    {
+        const m = normalized.match(/\(\s*([A-Za-z][^()]{3,80})\s*\)\s*HSN\s*:?\s*\d+/i);
+        if (m) {
+            let s = m[1].trim();
+            // Strip trailing ", N Qty" or " N Qty"
+            s = s.replace(/[,\s]+\d+\s*qty\s*$/i, '').trim();
+            // Strip trailing ", without/with Lid"
+            s = s.replace(/,\s*(?:without|with)\s+lid\s*$/i, '').trim();
+            // Strip trailing commas
+            s = s.replace(/[,\s]+$/, '').trim();
+            const c = tryReturn(s);
+            if (c) return c;
+        }
+    }
+
+    // ===== Strategy 0c: Generic row-numbered product extractor =====
+    // Catches unknown products (not in keyword list) by pattern:
+    //   "1 Therali Leaves 50 Qty Pack | B0XYZ" → "Therali Leaves"
+    //   "1 Aluminium Uruli, 17 No. Size"       → "Aluminium Uruli"
+    // IMPORTANT: digit prefix is restricted to 1-2 digits (row numbers like "1", "2")
+    // to avoid false-matches like "629159 If undelivered" where "629159" is a PIN code.
+    {
+        const m = normalized.match(/(?:^|\s)\b\d{1,2}\s+([A-Z][A-Za-z][\w\s'\-&.()/]{3,100}?)(?=\s*[,|]|\s+HSN\s*[:\-]?|\s+ASIN\s*[:\-]?|\s+SKU\s*[:\-]?|\s+B0[A-Z0-9]{8}\b)/);
+        if (m) {
+            const c = tryReturn(m[1]);
+            if (c) return c;
+        }
+    }
+
+    // ===== Strategy 1: Brand-prefixed names (iINTELLIGENCEi …) =====
+    // Catches product names that start with the IBI brand — but stripBrandPrefixes
+    // removes the brand from the final output.
+    const brandPatterns = [
+        /\b(i?\s*intelligence\s*i?[\s\-]+[A-Za-z][^\n]{4,120}?)(?=\s+(?:HSN|SKU|FSN|ASIN|Qty|Quantity|MRP|₹|Rs\.?\s*\d|\d{6,}|$))/i,
+        /\b(i?\s*intelligence\s*i?[\s\-]+[A-Za-z][\w\s\-,&'.()/]{4,100})/i
+    ];
+    for (const re of brandPatterns) {
+        const m = normalized.match(re);
+        if (m && m[1]) {
+            const c = tryReturn(m[1]);
+            if (c) return c;
+        }
+    }
+
+    // ===== Strategy 2: Explicit label-based extraction =====
+    const labelPatterns = [
+        /(?:product\s+name|item\s+name|product\s+title|item\s+description|description\s+of\s+goods?|product\s+description|description)\s*[:\-]\s*([A-Za-z][^\n]{4,150})/i,
+        /(?:product|item|description)\s*[\n\s]+([A-Z][\w\s\-,&'.()/]{8,120})/i
+    ];
+    for (const re of labelPatterns) {
+        const m = normalized.match(re);
+        if (m && m[1]) {
+            const c = tryReturn(m[1]);
+            if (c) return c;
+        }
+    }
+
+    // ===== Strategy 2.5: Meesho-specific patterns =====
+    const meeshoPatterns = [
+        /sub[\s\-]?order\s*(?:id|no\.?)?\s*[:\-]\s*[a-z0-9_\-]+\s+([A-Z][\w\s\-,&'.()/]{6,100})/i,
+        /\border\s+(?:id|no\.?)\s*[:\-]\s*[a-z0-9_\-]+\s+([A-Z][\w\s\-,&'.()/]{6,100})/i,
+        /\bsku\s*[:\-]?\s*[a-z0-9\-_]{3,30}\s+([A-Z][\w\s\-,&'.()/]{6,100})/i,
+        /\b([A-Z][\w\s\-,&'.()/]{8,100})\s+(?:size|colou?r|free\s+size)\s*[:\-]/i,
+        /(?:product\s+details?|item\s+details?)\s*[\n:\-]\s*([A-Z][\w\s\-,&'.()/]{6,120})/i
+    ];
+    for (const re of meeshoPatterns) {
+        const m = normalized.match(re);
+        if (m && m[1]) {
+            const c = tryReturn(m[1]);
+            if (c) return c;
+        }
+    }
+
+    // ===== Strategy 2.7: Meesho label table — "Order No. → ProductName → Free Size" =====
+    // Meesho Sub_Order_Labels PDFs linearize the Product Details table as:
+    //   "...SKU Size Qty Color Order No. Coir Brush 2 Qty. Free Size 1 Brown 289xxx..."
+    //   "...SKU Size Qty Color Order No. Tamarind Seed Remover, Cast Iron Blade... Free Size 1..."
+    // Uses lazy [\s\S] so commas inside the product name don't stop the match;
+    // then comma-truncation trims to first meaningful segment.
+    {
+        const m = normalized.match(/\border\s+no\.?\s+([A-Za-z][\s\S]{3,150}?)\s+(?:free\s+size|size\b)/i);
+        if (m && m[1]) {
+            let raw = m[1].trim();
+            // "Tamarind Seed Remover, Cast Iron Blade with Wooden Handle" → "Tamarind Seed Remover"
+            const commaPos = raw.indexOf(',');
+            if (commaPos > 5) raw = raw.substring(0, commaPos).trim();
+            const c = tryReturn(raw);
+            if (c) return c;
+        }
+    }
+
+    // ===== Strategy 3: Context around known product keywords (broad capture) =====
+    const productKeywords = [
+        'coir\\s+brush', 'coconut\\s+coir\\s+brush', 'coconut\\s+coir',
+        'broom\\s*stick', 'broomstick', 'coir\\s+broom',
+        'coir\\s+mat', 'door\\s*mat',
+        'coir\\s+rope',
+        'coconut\\s+shell',
+        'scrubber', 'kitchen\\s+scrub',
+        'cleaning\\s+brush', 'kitchen\\s+brush',
+        'eco[\\s\\-]+friendly\\s+brush',
+        'aluminium?\\s+uruli', 'aluminum\\s+uruli', '\\buruli\\b',
+        'aluminium?\\s+(?:square\\s+)?tray', 'aluminum\\s+(?:square\\s+)?tray'
+    ];
+
+    for (const kw of productKeywords) {
+        const re = new RegExp(
+            '((?:[A-Za-z][\\w\\-&\'.()/]*\\s+){0,6}\\b' + kw + '\\b(?:\\s+[\\w\\-&\'.()/]+){0,6})',
+            'i'
+        );
+        const m = normalized.match(re);
+        if (m && m[1]) {
+            const c = tryReturn(m[1]);
+            if (c) return c;
+        }
+    }
+
+    // ===== Strategy 4: Hardcoded short-name fallback =====
+    const t = normalized.toLowerCase();
+    const shortPatterns = [
+        { test: /coir\s+brush/, name: 'Coir Brush' },
+        { test: /broom\s*stick|broomstick|coir\s+broom/, name: 'Broomstick' },
+        { test: /coir\s+mat|door\s*mat/, name: 'Coir Mat' },
+        { test: /coir\s+rope/, name: 'Coir Rope' },
+        { test: /coconut\s+shell/, name: 'Coconut Shell' },
+        { test: /scrubber|kitchen\s+scrub/, name: 'Scrubber' },
+        { test: /uruli/, name: 'Aluminium Uruli' },
+        { test: /aluminium?\s+(?:square\s+)?tray|aluminum\s+(?:square\s+)?tray/, name: 'Aluminium Tray' }
+    ];
+    for (const p of shortPatterns) {
+        if (p.test.test(t)) return p.name;
+    }
+
+    return '';
+}
+
+// =================== QUANTITY EXTRACTION ===================
+// Priority order (first match wins):
+//   1. Parenthetical sum: "(Coir Brush 6 Qty) ... (Coir Brush 4 Qty)" → 10  (Amazon multi-line)
+//   2. "<N> Qty Pack" embedded in product name → that N  (e.g., "Therali Leaves 50 Qty Pack" → 50)
+//   3. "Total Qty: N" — preferred when present (Flipkart footer)
+//   4. MAX of any "<N> Qty" or "Qty <N>" patterns — NOT sum (avoids double-counting
+//      between row Qty and footer Total Qty, both of which equal the same number for
+//      single-line invoices)
+function detectQuantity(text) {
+    const t = text;
+
+    // Strategy 1: Sum from parentheticals — Amazon multi-line invoices
+    const parenQtys = [...t.matchAll(/\(\s*[^()]*?\b(\d+)\s*qty\s*\)/gi)];
+    if (parenQtys.length > 0) {
+        let total = 0;
+        for (const m of parenQtys) total += parseInt(m[1], 10);
+        if (total > 0 && total < 10000) return total;
+    }
+
+    // Strategy 2: Pack size embedded in product/SKU name — takes priority over
+    // invoice row qty (TOTAL QTY) because it reflects actual units shipped.
+    // Formats seen across platforms:
+    //   "Therali Leaves 50 Qty Pack"     → 50  (generic Qty Pack)
+    //   "Coir Brushes 2 Quantity"        → 2   (Flipkart/Shopsy: "N Quantity" without Pack)
+    //   "Aluminium square tray 2Qty"     → 2   (Flipkart SKU: digit+Qty concatenated)
+    const packQtys = [
+        ...t.matchAll(/\b(\d+)\s*qty\s+pack\b/gi),           // "2 Qty Pack" / "50 Qty Pack"
+        ...t.matchAll(/\b(\d+)\s+quantit(?:y|ies)\b/gi),     // "2 Quantity" (Flipkart/Shopsy SKU format)
+        ...t.matchAll(/\b(\d+)qty\b/gi)                       // "2Qty" (no-space Flipkart SKU)
+    ];
+    if (packQtys.length > 0) {
+        let max = 0;
+        for (const m of packQtys) {
+            const n = parseInt(m[1], 10);
+            if (n > max) max = n;
+        }
+        if (max > 0 && max < 10000) return max;
+    }
+
+    // Strategy 3: "Total Qty: N" — preferred over per-line Qty when present
+    const totalQty = t.match(/\btotal\s+(?:qty|quantity)\s*[:\-]?\s*(\d+)/i);
+    if (totalQty) {
+        const n = parseInt(totalQty[1], 10);
+        if (n > 0 && n < 10000) return n;
+    }
+
+    // Strategy 4: MAX of any "<N> Qty" or "Qty <N>" pattern.
+    // Using MAX (not SUM) is important: for single-line invoices the row Qty
+    // and Total Qty are the same number — summing them gave us Qty=2 instead of 1.
+    const inlineQtys = [
+        ...t.matchAll(/\b(\d+)\s+qty\b/gi),           // "1 Qty" / "50 Qty"
+        ...t.matchAll(/\bqty\s*[:\-]?\s*(\d+)/gi)      // "Qty 1" / "Qty: 1"
+    ];
+    if (inlineQtys.length > 0) {
+        let max = 0;
+        for (const m of inlineQtys) {
+            const n = parseInt(m[1], 10);
+            if (n > max) max = n;
+        }
+        if (max > 0 && max < 10000) return max;
+    }
+
+    return 1; // default
+}
+
+// =================== ORDER COUNT EXTRACTION (for manifest) ===================
+function detectOrderCount(text) {
+    const t = text;
+
+    // Try labeled patterns first
+    const labelPatterns = [
+        /total\s+(?:orders?|shipments?|packages?|awbs?)\s*(?:to\s+dispatch)?\s*[:\-]?\s*(\d+)/i,
+        /(?:no\.?|number)\s+of\s+(?:orders?|shipments?|packages?)\s*[:\-]?\s*(\d+)/i,
+        /(\d+)\s+(?:orders?|shipments?|packages?|awbs?)\s+(?:in\s+)?(?:this\s+)?manifest/i
+    ];
+
+    for (const re of labelPatterns) {
+        const m = t.match(re);
+        if (m) {
+            const n = parseInt(m[1], 10);
+            if (n > 0 && n < 10000) return n;
+        }
+    }
+
+    // Meesho manifest: count rows by "Free Size" tokens — every Meesho manifest row
+    // ends with "Free Size", and this is more robust than counting AWBs (which can
+    // be split or merged across PDF.js text extraction).
+    const freeSizeCount = (t.match(/\bfree\s+size\b/gi) || []).length;
+    if (freeSizeCount > 0 && freeSizeCount < 1000) return freeSizeCount;
+
+    // Meesho manifest fallback: count rows by AWB-like numbers (13-16 pure digits)
+    const meeshoAwbs = (t.match(/\b\d{13,16}\b/g) || []);
+    if (meeshoAwbs.length > 0 && meeshoAwbs.length < 1000) return meeshoAwbs.length;
+
+    // Fallback: count tracking IDs / AWB-like rows
+    const awbCount = (t.match(/\b[A-Z]{2,4}\d{8,14}\b/g) || []).length;
+    if (awbCount > 0 && awbCount < 1000) return awbCount;
+
+    // Could not determine order count from text content.
+    // This happens when the manifest table is image-based (e.g. IBI Pickup Request
+    // Manager PDF printed via Chrome — entire table rendered as raster graphics).
+    // Signal uncertainty so the UI can warn the user to enter the count manually.
+    state.orderCountUncertain = true;
+    return 1;
+}
+
+// =================== MULTI-ORDER PDF DETECTION ===================
+// A multi-order PDF (e.g. Meesho Sub_Order_Labels) has one complete invoice per page.
+// We detect this by checking if multiple pages each contain their own Invoice Date,
+// then extract product + qty from each page separately for a combined filename.
+
+function isOrderPage(text) {
+    // A page counts as a complete order page if it has both invoice date + purchase order
+    return /\binvoice\s+date\b/i.test(text) &&
+        (/\bpurchase\s+order\s+no\b/i.test(text) ||
+         /\border\s+number\s*:/i.test(text) ||
+         /\border\s+id\s*:/i.test(text));
+}
+
+// Extract the single product + qty from one invoice/label page.
+function extractOrderFromPage(pageText) {
+    const product = detectProductName(pageText);
+    const qty     = detectQuantity(pageText);
+    return product ? { product, qty: qty || 1 } : null;
+}
+
+// Returns array of {product, qty} when the PDF has 2+ independent invoice pages,
+// otherwise returns null (single-order).
+function detectMultiOrderPages(pageTexts) {
+    if (!pageTexts || pageTexts.length <= 1) return null;
+    const orderPages = pageTexts.filter(isOrderPage);
+    if (orderPages.length <= 1) return null;
+    const orders = orderPages.map(extractOrderFromPage).filter(Boolean);
+    return orders.length >= 2 ? orders : null;
+}
+
+// =================== PDF PROCESSING ===================
+async function extractPdfText(arrayBuffer) {
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pageTexts = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        pageTexts.push(pageText);
+    }
+    const fullText = pageTexts.join('\n');
+    return { fullText, pageTexts, pdf };   // pdf object kept for canvas rendering
+}
+
+async function processFile(file) {
+    if (!file) return;
+
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        showStatus('Please upload a PDF file.', 'error');
+        return;
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+        showStatus('File too large (max 50 MB).', 'error');
+        return;
+    }
+
+    state.file = file;
+    fileName.textContent = file.name;
+    fileSize.textContent = formatFileSize(file.size);
+
+    showStatus('Reading PDF...', 'info', true);
+
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        state.fileBuffer = arrayBuffer;
+
+        // pdf.js consumes the buffer — keep a clone for download
+        const cloneBuffer = arrayBuffer.slice(0);
+        state.fileBuffer = cloneBuffer;
+
+        const { fullText: text, pageTexts, pdf: pdfDoc } = await extractPdfText(arrayBuffer);
+        state.fullText = text;
+        state.pageTexts = pageTexts;
+        state.pdfDoc = pdfDoc;   // keep for Gemini canvas rendering
+
+        // Auto-detect from full text
+        const detectedPlatform = detectPlatform(text, file.name);
+        const detectedType = detectDocType(text);
+        const detectedDate = extractDate(text) || todayStr();
+        const invoiceYear = detectedDate ? parseInt(detectedDate.substring(0, 4), 10) : new Date().getFullYear();
+        const detectedPickup = extractPickupDate(text, invoiceYear);
+        const detectedOrders = detectOrderCount(text);
+
+        // Check for multi-order PDF (e.g. Meesho Sub_Order_Labels with one invoice per page)
+        const multiOrders = (detectedType !== 'manifest') ? detectMultiOrderPages(pageTexts) : null;
+
+        state.isMultiOrder = !!(multiOrders && multiOrders.length >= 2);
+        state.multiOrders  = multiOrders || [];
+
+        let detectedProduct, detectedQty;
+        if (state.isMultiOrder) {
+            // Combine all per-page products into a single display string
+            // "Coir Brush 2 Qty, Tamarind Seed Remover 2 Qty"
+            detectedProduct = multiOrders.map(o => `${o.product} ${o.qty} Qty`).join(', ');
+            detectedQty = multiOrders.length; // quantity field repurposed as order count
+        } else {
+            detectedProduct = detectProductName(text);
+            detectedQty     = detectQuantity(text);
+        }
+
+        state.detected = {
+            platform: detectedPlatform,
+            docType: detectedType,
+            date: detectedDate,
+            pickup: detectedPickup,
+            product: detectedProduct,
+            quantity: detectedQty,
+            orders: detectedOrders
+        };
+
+        // Populate UI
+        platform.value    = detectedPlatform;
+        invoiceDate.value = detectedDate;
+        if (detectedPickup) pickupDate.value = detectedPickup;
+        productName.value = detectedProduct;
+        quantity.value    = detectedQty;
+        orderCount.value  = detectedOrders;
+
+        // --- Gemini AI scan for image-based manifests ---
+        // When detectOrderCount couldn't read the table (raster-rendered manifest),
+        // use Gemini Vision to extract order count, date, and platform from the page image.
+        if (state.orderCountUncertain && detectedType === 'manifest') {
+            const geminiKey = getGeminiKey();
+            if (geminiKey) {
+                // Blue "scanning" state
+                orderCountWarn.style.display = 'none';
+                setGeminiStatus('⟳ Scanning manifest with Gemini AI...', '');
+                geminiStatus.querySelector ? null : null; // no-op, just reference
+                // Spinning icon
+                geminiStatus.innerHTML = '<span class="gemini-spin">⟳</span>&nbsp;Scanning manifest with Gemini AI…';
+                geminiStatus.className = 'gemini-status show';
+                orderCount.style.borderColor = '#3b82f6';
+                orderCount.style.background  = 'rgba(59,130,246,0.07)';
+
+                (async () => {
+                    try {
+                        const base64 = await renderPageToBase64(state.pdfDoc, 1, 2.0);
+                        const result = await scanManifestWithGemini(base64, geminiKey, getGeminiModel());
+
+                        // Apply AI-detected order count
+                        if (result.orderCount && result.orderCount > 0) {
+                            orderCount.value = result.orderCount;
+                        }
+                        // Apply AI-detected date (only if text extraction gave nothing)
+                        if (result.date && (!invoiceDate.value || invoiceDate.value === todayStr())) {
+                            const parsed = ddmmyyyyToInputDate(result.date);
+                            if (parsed) invoiceDate.value = parsed;
+                        }
+                        // Apply AI-detected platform (only if text detection was uncertain)
+                        if (result.platform && !platform.value) {
+                            const map = { meesho: 'Meesho', amazon: 'Amazon', flipkart: 'Flipkart', shopsy: 'Shopsy', shopclues: 'ShopClues' };
+                            const p = map[result.platform.toLowerCase()];
+                            if (p) platform.value = p;
+                        }
+
+                        // Green success state
+                        orderCount.style.borderColor = '#10b981';
+                        orderCount.style.background  = 'rgba(16,185,129,0.07)';
+                        geminiStatus.innerHTML = `✓ Gemini: ${result.orderCount || '?'} orders${result.courier ? ' · ' + result.courier : ''}`;
+                        geminiStatus.className = 'gemini-status show success';
+
+                        updatePreview();
+                    } catch (err) {
+                        console.error('Gemini scan error:', err);
+                        // Fall back to amber manual-entry warning
+                        orderCount.style.borderColor = '#f59e0b';
+                        orderCount.style.background  = 'rgba(245,158,11,0.08)';
+                        orderCountWarn.style.display = 'block';
+                        geminiStatus.innerHTML = '✕ Gemini scan failed — enter count manually. (' + err.message + ')';
+                        geminiStatus.className = 'gemini-status show error';
+                    }
+                })();
+            } else {
+                // No Gemini key — show existing amber warning
+                orderCount.style.borderColor = '#f59e0b';
+                orderCount.style.background  = 'rgba(245,158,11,0.08)';
+                orderCountWarn.style.display = 'block';
+                geminiStatus.className = 'gemini-status';
+            }
+            state.orderCountUncertain = false;
+        } else {
+            orderCount.style.borderColor = '';
+            orderCount.style.background  = '';
+            orderCountWarn.style.display = 'none';
+            geminiStatus.className = 'gemini-status';
+        }
+
+        setDocType(detectedType);
+
+        // Populate debug viewer with extracted text + platform scores
+        let scoresHeader = '';
+        if (state.platformScores) {
+            const sorted = Object.entries(state.platformScores)
+                .sort((a, b) => b[1] - a[1])
+                .map(([p, s]) => p.padEnd(10) + ' ' + s)
+                .join('\n');
+            scoresHeader = '=== Platform detection scores ===\n' +
+                sorted + '\n' +
+                'Winner: ' + detectedPlatform +
+                ' (confidence: ' + (state.platformConfidence || 0) + ')\n\n' +
+                '=== Extracted PDF text ===\n';
+        }
+
+        const debugText = text.length > 5000
+            ? text.substring(0, 5000) + '\n\n... (truncated, ' + (text.length - 5000) + ' more characters)'
+            : text;
+        debugContent.textContent = scoresHeader + (debugText || '(no text extracted from PDF)');
+
+        detailsPanel.classList.add('show');
+        filenamePreview.style.display = 'block';
+        downloadBtn.disabled = false;
+        driveBtn.disabled    = !getGasUrl();   // enabled only when GAS URL is configured
+
+        showStatus('✓ PDF parsed. Review the detected fields below and click Download.', 'success');
+        updatePreview();
+
+    } catch (err) {
+        console.error('PDF parse error:', err);
+        showStatus('Could not parse PDF. You can still set the fields manually and download.', 'warn');
+
+        // Still allow manual workflow
+        detailsPanel.classList.add('show');
+        filenamePreview.style.display = 'block';
+        downloadBtn.disabled = false;
+        driveBtn.disabled    = !getGasUrl();
+        updatePreview();
+    }
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+// =================== DOC TYPE TOGGLE ===================
+function setDocType(type) {
+    state.docType = type;
+    if (type === 'manifest') {
+        typeInvoice.classList.remove('active');
+        typeManifest.classList.add('active');
+        invoiceFields.style.display = 'none';
+        manifestFields.style.display = 'block';
+    } else {
+        typeManifest.classList.remove('active');
+        typeInvoice.classList.add('active');
+        invoiceFields.style.display = 'block';
+        manifestFields.style.display = 'none';
+    }
+    updatePreview();
+}
+
+typeInvoice.addEventListener('click', () => setDocType('invoice'));
+typeManifest.addEventListener('click', () => setDocType('manifest'));
+
+// =================== FILENAME BUILD ===================
+function sanitizeFileName(name) {
+    // Remove characters that are invalid in filenames on Windows/Mac/Linux
+    return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '').trim();
+}
+
+function buildFileName() {
+    const plat = platform.value || 'Platform';
+    const invDateLong = formatDateLong(invoiceDate.value);
+    const pickShort = formatDateShort(pickupDate.value);
+    const pickLong = formatDateLong(pickupDate.value);
+
+    let name;
+
+    if (state.docType === 'manifest') {
+        // "Amazon Manifest 5 Orders 23 May 2026"
+        const orders = parseInt(orderCount.value, 10) || 1;
+        name = plat + ' Manifest ' + orders + ' Orders ' + (invDateLong || pickLong);
+
+    } else if (state.isMultiOrder) {
+        // Multi-order invoice (one invoice per PDF page, e.g. Meesho Sub_Order_Labels)
+        // productName already contains "Coir Brush 2 Qty, Tamarind Seed Remover 2 Qty"
+        // quantity contains total number of orders
+        // Format: "Meesho Coir Brush 2 Qty, Tamarind Seed Remover 2 Qty, 27 May 2026 D 27 May Total 2 Orders"
+        const prod = (productName.value || 'Product').trim();
+        const totalOrders = parseInt(quantity.value, 10) || state.multiOrders.length || 1;
+        name = plat + ' ' + prod + ', ' + invDateLong + ' D ' + pickShort + ' Total ' + totalOrders + ' Orders';
+
+    } else {
+        // Single-order invoice / label
+        // "Amazon Coir Brush 6 Qty 23 May 2026 D 23 May"
+        const prod = (productName.value || 'Product').trim();
+        const qty = parseInt(quantity.value, 10) || 1;
+        name = plat + ' ' + prod + ' ' + qty + ' Qty ' + invDateLong + ' D ' + pickShort;
+    }
+
+    name = sanitizeFileName(name);
+    return name + '.pdf';
+}
+
+function updatePreview() {
+    const name = buildFileName();
+    previewText.textContent = name;
+}
+
+// Bind preview updates to all inputs
+['change', 'input'].forEach(evt => {
+    [platform, productName, quantity, orderCount, invoiceDate, pickupDate]
+        .forEach(el => el.addEventListener(evt, updatePreview));
+});
+
+// =================== UPLOAD ZONE ===================
+fileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+        processFile(e.target.files[0]);
+    }
+});
+
+['dragenter', 'dragover'].forEach(evt => {
+    uploadZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadZone.classList.add('drag-over');
+    });
+});
+
+['dragleave', 'drop'].forEach(evt => {
+    uploadZone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadZone.classList.remove('drag-over');
+    });
+});
+
+uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        processFile(e.dataTransfer.files[0]);
+    }
+});
+
+// =================== DOWNLOAD ===================
+downloadBtn.addEventListener('click', () => {
+    if (!state.fileBuffer) {
+        showStatus('Please upload a PDF first.', 'error');
+        return;
+    }
+
+    const newName = buildFileName();
+
+    try {
+        const blob = new Blob([state.fileBuffer], { type: 'application/pdf' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = newName;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+
+        // Cleanup
+        setTimeout(() => {
+            URL.revokeObjectURL(url);
+            if (a.parentNode) a.parentNode.removeChild(a);
+        }, 100);
+
+        showStatus('✓ Downloaded: ' + newName, 'success');
+    } catch (err) {
+        console.error('Download error:', err);
+        showStatus('Download failed. Please try again.', 'error');
+    }
+});
+
+// =================== CLEAR ALL ===================
+clearBtn.addEventListener('click', () => {
+    if (!state.file && !productName.value && quantity.value === '1' && orderCount.value === '1') {
+        // Nothing to clear
+        showStatus('Nothing to clear.', 'info');
+        setTimeout(hideStatus, 1500);
+        return;
+    }
+
+    if (!confirm('Clear all fields and remove the loaded file?')) return;
+
+    state.file = null;
+    state.fileBuffer = null;
+    state.fullText = '';
+    state.detected = {};
+
+    fileInput.value = '';
+    productName.value = '';
+    quantity.value = '1';
+    orderCount.value = '1';
+    orderCount.style.borderColor = '';
+    orderCount.style.background  = '';
+    orderCount.title = '';
+    orderCountWarn.style.display = 'none';
+    geminiStatus.className = 'gemini-status';
+    geminiStatus.textContent = '';
+    platform.value = 'Amazon';
+    invoiceDate.value = todayStr();
+    pickupDate.value = todayStr();
+
+    setDocType('invoice');
+
+    debugContent.textContent = '';
+    debugContent.classList.remove('show');
+    debugCaret.textContent = '▸';
+
+    detailsPanel.classList.remove('show');
+    filenamePreview.style.display = 'none';
+    downloadBtn.disabled = true;
+    driveBtn.disabled    = true;
+    driveBtn.innerHTML   = '☁ Send to GDrive';
+    driveStatus.className = 'drive-status';
+    driveStatus.innerHTML = '';
+
+    hideStatus();
+    showStatus('✓ All cleared.', 'success');
+    setTimeout(hideStatus, 1500);
+});
+
+// =================== LOGO FALLBACK ===================
+// If logo.png fails (missing), gracefully hide so layout isn't broken
+$('companyLogo').addEventListener('error', function() {
+    this.style.display = 'none';
+});
+
+// =================== INITIAL PREVIEW ===================
+updatePreview();
+</script>
+
+</body>
+</html>
