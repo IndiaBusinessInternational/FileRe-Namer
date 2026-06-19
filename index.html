@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v3.30</title>
+    <title>IBI File Re-Namer v3.31</title>
 
     <!-- Favicon: IBI text in cyan on black background, Roboto font -->
     <link rel="icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23000000'/%3E%3Ctext x='50%25' y='50%25' font-family='Roboto, Arial, sans-serif' font-size='22' font-weight='900' fill='%2300c5ff' dominant-baseline='central' text-anchor='middle'%3EIBI%3C/text%3E%3C/svg%3E" type="image/svg+xml">
@@ -933,7 +933,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v3.30</span>
+        <span class="version-tag">v3.31</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1100,7 +1100,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.30</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.31</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1121,6 +1121,7 @@
                     <option value="gemini">Google Gemini</option>
                     <option value="openai">OpenAI (GPT-4o)</option>
                     <option value="claude">Anthropic Claude</option>
+                    <option value="deepseek">DeepSeek</option>
                 </select>
             </div>
 
@@ -1166,6 +1167,18 @@
                         <button class="show-key-btn" data-target="claudeKeyInput" title="Show/hide">👁</button>
                     </div>
                     <p class="key-hint">Uses <strong>Claude Haiku 4.5</strong> (vision, auto-falls back to Sonnet 4.6 / Opus). Key: <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a>.</p>
+                </div>
+            </div>
+
+            <!-- DeepSeek fields -->
+            <div id="deepseekFields" class="provider-fields" style="display:none;">
+                <div class="form-field" style="margin-bottom:18px;">
+                    <label for="deepseekKeyInput" style="font-size:12px;font-weight:500;">DeepSeek API Key</label>
+                    <div class="api-key-row">
+                        <input type="password" id="deepseekKeyInput" placeholder="sk-..." autocomplete="off" spellcheck="false">
+                        <button class="show-key-btn" data-target="deepseekKeyInput" title="Show/hide">👁</button>
+                    </div>
+                    <p class="key-hint">Uses <strong>DeepSeek V4</strong> (multimodal vision). Key: <a href="https://platform.deepseek.com/api_keys" target="_blank">platform.deepseek.com</a>. Note: if your browser blocks the request (CORS), use Gemini/OpenAI/Claude instead.</p>
                 </div>
             </div>
 
@@ -1274,6 +1287,7 @@ const GAS_URL_STORE      = 'ibi_gas_url';
 const AI_PROVIDER_STORE  = 'ibi_ai_provider';
 const OPENAI_KEY_STORE   = 'ibi_openai_key';
 const CLAUDE_KEY_STORE   = 'ibi_claude_key';
+const DEEPSEEK_KEY_STORE = 'ibi_deepseek_key';
 
 function getGeminiKey()   { try { return localStorage.getItem(GEMINI_KEY_STORE)  || ''; } catch { return ''; } }
 function getGeminiModel() { try { return localStorage.getItem(GEMINI_MODEL_STORE) || 'gemini-1.5-flash'; } catch { return 'gemini-1.5-flash'; } }
@@ -1281,12 +1295,14 @@ function getGasUrl()      { try { return localStorage.getItem(GAS_URL_STORE)    
 function getAiProvider()  { try { return localStorage.getItem(AI_PROVIDER_STORE) || 'gemini'; } catch { return 'gemini'; } }
 function getOpenaiKey()   { try { return localStorage.getItem(OPENAI_KEY_STORE)  || ''; } catch { return ''; } }
 function getClaudeKey()   { try { return localStorage.getItem(CLAUDE_KEY_STORE)  || ''; } catch { return ''; } }
+function getDeepseekKey() { try { return localStorage.getItem(DEEPSEEK_KEY_STORE) || ''; } catch { return ''; } }
 
 // True if the currently-selected provider has a key configured.
 function hasAiKey() {
     const p = getAiProvider();
     if (p === 'openai') return !!getOpenaiKey();
     if (p === 'claude') return !!getClaudeKey();
+    if (p === 'deepseek') return !!getDeepseekKey();
     return !!getGeminiKey();
 }
 
@@ -1298,6 +1314,7 @@ function refreshSettingsUI() {
     $('geminiModelSelect').value = getGeminiModel();
     $('openaiKeyInput').value   = getOpenaiKey();
     $('claudeKeyInput').value   = getClaudeKey();
+    $('deepseekKeyInput').value = getDeepseekKey();
     $('gasUrlInput').value      = getGasUrl();
     showProviderFields(provider);
     const btn = $('settingsBtn');
@@ -1311,6 +1328,7 @@ function showProviderFields(provider) {
     $('geminiFields').style.display = provider === 'gemini' ? 'block' : 'none';
     $('openaiFields').style.display = provider === 'openai' ? 'block' : 'none';
     $('claudeFields').style.display = provider === 'claude' ? 'block' : 'none';
+    $('deepseekFields').style.display = provider === 'deepseek' ? 'block' : 'none';
 }
 
 // Settings modal open / close
@@ -1318,7 +1336,7 @@ $('settingsBtn').addEventListener('click', () => {
     refreshSettingsUI();
     $('keyStatus').textContent = '';
     $('settingsOverlay').classList.add('open');
-    ['geminiKeyInput','openaiKeyInput','claudeKeyInput'].forEach(id => { $(id).type = 'password'; });
+    ['geminiKeyInput','openaiKeyInput','claudeKeyInput','deepseekKeyInput'].forEach(id => { $(id).type = 'password'; });
 });
 $('modalClose').addEventListener('click', () => $('settingsOverlay').classList.remove('open'));
 $('settingsOverlay').addEventListener('click', e => { if (e.target === $('settingsOverlay')) $('settingsOverlay').classList.remove('open'); });
@@ -1342,6 +1360,7 @@ $('saveKeyBtn').addEventListener('click', () => {
     const gModel = $('geminiModelSelect').value;
     const oKey  = $('openaiKeyInput').value.trim();
     const cKey  = $('claudeKeyInput').value.trim();
+    const dsKey = $('deepseekKeyInput').value.trim();
     const gas   = $('gasUrlInput').value.trim();
     try {
         localStorage.setItem(AI_PROVIDER_STORE, provider);
@@ -1349,6 +1368,7 @@ $('saveKeyBtn').addEventListener('click', () => {
         localStorage.setItem(GEMINI_MODEL_STORE, gModel);
         if (oKey) localStorage.setItem(OPENAI_KEY_STORE, oKey); else localStorage.removeItem(OPENAI_KEY_STORE);
         if (cKey) localStorage.setItem(CLAUDE_KEY_STORE, cKey); else localStorage.removeItem(CLAUDE_KEY_STORE);
+        if (dsKey) localStorage.setItem(DEEPSEEK_KEY_STORE, dsKey); else localStorage.removeItem(DEEPSEEK_KEY_STORE);
         if (gas)  localStorage.setItem(GAS_URL_STORE, gas);     else localStorage.removeItem(GAS_URL_STORE);
         driveBtn.disabled = !state.file || !gas;
         $('keyStatus').textContent = '✓ Saved';
@@ -1388,7 +1408,7 @@ geminiScanBtn.addEventListener('click', async () => {
     const origLabel = geminiScanBtn.innerHTML;
     geminiScanBtn.innerHTML = '<span class="gemini-spin">⟳</span> Scanning…';
     const prov = getAiProvider();
-    const provName = prov === 'openai' ? 'OpenAI' : prov === 'claude' ? 'Claude' : 'Gemini';
+    const provName = prov === 'openai' ? 'OpenAI' : prov === 'claude' ? 'Claude' : prov === 'deepseek' ? 'DeepSeek' : 'Gemini';
     setGeminiScanStatus('<span class="gemini-spin">⟳</span>&nbsp;Reading document with ' + provName + '…', '');
 
     try {
@@ -1629,11 +1649,54 @@ async function claudeVisionCall(apiKey, prompt, base64Image) {
     throw new Error(lastErr ? ('Claude — ' + lastErr.message) : 'All Claude models failed.');
 }
 
+// ── DeepSeek Vision (V4, OpenAI-compatible format) with model fallback ──
+// deepseek-chat / deepseek-reasoner deprecate 2026-07-24 → deepseek-v4-flash;
+// we try the current explicit names first, then the compatibility aliases.
+const DEEPSEEK_MODEL_CHAIN = ['deepseek-v4-flash', 'deepseek-chat', 'deepseek-v4-pro', 'deepseek-reasoner'];
+async function deepseekVisionCall(apiKey, prompt, base64Image) {
+    if (!apiKey) throw new Error('DeepSeek API key not set — add it in ⚙ Settings.');
+    let lastErr = null;
+    for (const model of DEEPSEEK_MODEL_CHAIN) {
+        let response;
+        try {
+            response = await fetch('https://api.deepseek.com/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+                body: JSON.stringify({
+                    model: model,
+                    temperature: 0,
+                    max_tokens: 600,
+                    messages: [{
+                        role: 'user',
+                        content: [
+                            { type: 'text', text: prompt },
+                            { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + base64Image } }
+                        ]
+                    }]
+                })
+            });
+        } catch { lastErr = new Error('Network/CORS error contacting DeepSeek — try Gemini, OpenAI or Claude.'); continue; }
+
+        if (response.ok) {
+            const data = await response.json();
+            return (data.choices?.[0]?.message?.content || '').trim();
+        }
+        const err = await response.json().catch(() => ({}));
+        const msg = err.error?.message || ('HTTP ' + response.status);
+        if (response.status === 404 || response.status === 429 || /model|does not exist|not found|quota|rate/i.test(msg)) {
+            lastErr = new Error(`${model}: ${msg}`); continue;   // try next model
+        }
+        throw new Error('DeepSeek ' + response.status + ': ' + msg);
+    }
+    throw new Error(lastErr ? ('DeepSeek — ' + lastErr.message) : 'All DeepSeek models failed.');
+}
+
 // Unified vision dispatcher — routes to the provider chosen in Settings.
 async function aiVisionScan(prompt, base64Image) {
     const provider = getAiProvider();
     if (provider === 'openai') return openaiVisionCall(getOpenaiKey(), prompt, base64Image);
     if (provider === 'claude') return claudeVisionCall(getClaudeKey(), prompt, base64Image);
+    if (provider === 'deepseek') return deepseekVisionCall(getDeepseekKey(), prompt, base64Image);
     return geminiVisionCall(getGeminiKey(), getGeminiModel(), prompt, base64Image);
 }
 
@@ -1844,8 +1907,9 @@ driveBtn.addEventListener('click', async () => {
             const fileLink   = result.fileUrl   ? `<a href="${result.fileUrl}"   target="_blank">Open file</a>`   : '';
             const folderLink = result.folderUrl ? `<a href="${result.folderUrl}" target="_blank">Open folder</a>` : '';
             const dupNote    = (result.replaced > 0) ? ` (replaced ${result.replaced} old cop${result.replaced === 1 ? 'y' : 'ies'})` : '';
+            const purgeNote  = (result.purged > 0) ? ` · 🧹 cleaned ${result.purged} folder${result.purged === 1 ? '' : 's'} older than 15 days` : '';
             setDriveStatus(
-                `✓ Saved to <strong>IBI Daily Orders / ${result.folder}</strong>${dupNote}${fileLink ? ' · ' + fileLink : ''}${folderLink ? ' · ' + folderLink : ''}`,
+                `✓ Saved to <strong>IBI Daily Orders / ${result.folder}</strong>${dupNote}${purgeNote}${fileLink ? ' · ' + fileLink : ''}${folderLink ? ' · ' + folderLink : ''}`,
                 'success'
             );
         }
