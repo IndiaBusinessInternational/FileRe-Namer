@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v3.31</title>
+    <title>IBI File Re-Namer v3.32</title>
 
     <!-- Favicon: IBI text in cyan on black background, Roboto font -->
     <link rel="icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23000000'/%3E%3Ctext x='50%25' y='50%25' font-family='Roboto, Arial, sans-serif' font-size='22' font-weight='900' fill='%2300c5ff' dominant-baseline='central' text-anchor='middle'%3EIBI%3C/text%3E%3C/svg%3E" type="image/svg+xml">
@@ -933,7 +933,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v3.31</span>
+        <span class="version-tag">v3.32</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1100,7 +1100,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.31</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.32</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1131,7 +1131,6 @@
                     <label for="geminiKeyInput" style="font-size:12px;font-weight:500;">Gemini API Key</label>
                     <div class="api-key-row">
                         <input type="password" id="geminiKeyInput" placeholder="AIza..." autocomplete="off" spellcheck="false">
-                        <button class="show-key-btn" data-target="geminiKeyInput" title="Show/hide">👁</button>
                     </div>
                     <p class="key-hint">Free key: <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com</a></p>
                 </div>
@@ -1152,7 +1151,6 @@
                     <label for="openaiKeyInput" style="font-size:12px;font-weight:500;">OpenAI API Key</label>
                     <div class="api-key-row">
                         <input type="password" id="openaiKeyInput" placeholder="sk-..." autocomplete="off" spellcheck="false">
-                        <button class="show-key-btn" data-target="openaiKeyInput" title="Show/hide">👁</button>
                     </div>
                     <p class="key-hint">Uses <strong>gpt-4o-mini</strong> (vision). Key: <a href="https://platform.openai.com/api-keys" target="_blank">platform.openai.com</a> (pay-as-you-go).</p>
                 </div>
@@ -1164,7 +1162,6 @@
                     <label for="claudeKeyInput" style="font-size:12px;font-weight:500;">Claude API Key</label>
                     <div class="api-key-row">
                         <input type="password" id="claudeKeyInput" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
-                        <button class="show-key-btn" data-target="claudeKeyInput" title="Show/hide">👁</button>
                     </div>
                     <p class="key-hint">Uses <strong>Claude Haiku 4.5</strong> (vision, auto-falls back to Sonnet 4.6 / Opus). Key: <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a>.</p>
                 </div>
@@ -1176,7 +1173,6 @@
                     <label for="deepseekKeyInput" style="font-size:12px;font-weight:500;">DeepSeek API Key</label>
                     <div class="api-key-row">
                         <input type="password" id="deepseekKeyInput" placeholder="sk-..." autocomplete="off" spellcheck="false">
-                        <button class="show-key-btn" data-target="deepseekKeyInput" title="Show/hide">👁</button>
                     </div>
                     <p class="key-hint">Uses <strong>DeepSeek V4</strong> (multimodal vision). Key: <a href="https://platform.deepseek.com/api_keys" target="_blank">platform.deepseek.com</a>. Note: if your browser blocks the request (CORS), use Gemini/OpenAI/Claude instead.</p>
                 </div>
@@ -1344,13 +1340,18 @@ $('settingsOverlay').addEventListener('click', e => { if (e.target === $('settin
 // Provider dropdown → show matching key fields
 $('aiProviderSelect').addEventListener('change', () => showProviderFields($('aiProviderSelect').value));
 
-// Show/hide any key field (data-target buttons)
-document.querySelectorAll('.show-key-btn[data-target]').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const inp = $(btn.getAttribute('data-target'));
-        if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
-        else                         { inp.type = 'password'; btn.textContent = '👁'; }
-    });
+// API-key protection: keys can be PASTED IN but never copied/cut/dragged OUT,
+// and they always stay masked (no reveal button). This stops the key being
+// lifted from this app into another app or site.
+['geminiKeyInput','openaiKeyInput','claudeKeyInput','deepseekKeyInput'].forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    el.type = 'password';                              // always masked
+    el.setAttribute('autocomplete', 'off');
+    el.addEventListener('copy',      e => e.preventDefault());   // block Ctrl+C / right-click Copy
+    el.addEventListener('cut',       e => e.preventDefault());   // block Ctrl+X / right-click Cut
+    el.addEventListener('dragstart', e => e.preventDefault());   // block drag-out
+    // 'paste' is intentionally NOT blocked — pasting a key in is allowed.
 });
 
 // Save all settings
