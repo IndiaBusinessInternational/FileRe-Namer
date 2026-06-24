@@ -1285,9 +1285,24 @@ const OPENAI_KEY_STORE   = 'ibi_openai_key';
 const CLAUDE_KEY_STORE   = 'ibi_claude_key';
 const DEEPSEEK_KEY_STORE = 'ibi_deepseek_key';
 
+// ── Default Google Drive endpoint — used on EVERY device unless overridden in ⚙ Settings ──
+// Settings are stored per-browser, so a URL saved on a laptop never reaches a phone. Baking
+// the endpoint in here means every device (phone, laptop, any browser) can upload to Drive
+// out of the box with zero setup. Paste your deployed Apps Script Web App URL between the
+// quotes — it MUST end in /exec. Leave it '' to keep Drive upload per-device (the old way).
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxTI0mUjbZTxcmBHIAj6n_JZzsa0jznlXNI8gXioPlGv3OjrHs9pgaIhCauQ_18fU1JHA/exec';
+
 function getGeminiKey()   { try { return localStorage.getItem(GEMINI_KEY_STORE)  || ''; } catch { return ''; } }
 function getGeminiModel() { try { return localStorage.getItem(GEMINI_MODEL_STORE) || 'gemini-1.5-flash'; } catch { return 'gemini-1.5-flash'; } }
-function getGasUrl()      { try { return localStorage.getItem(GAS_URL_STORE)     || ''; } catch { return ''; } }
+function getGasUrl()      {
+    try {
+        // A per-device override (saved via ⚙ Settings) wins ONLY if it's a valid deployed
+        // /exec URL. Anything else — empty, or a wrong link like a Drive *folder* URL —
+        // falls back to the baked-in default, so every device works without per-device setup.
+        const saved = localStorage.getItem(GAS_URL_STORE) || '';
+        return /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec\b/.test(saved) ? saved : DEFAULT_GAS_URL;
+    } catch { return DEFAULT_GAS_URL; }
+}
 function getAiProvider()  { try { return localStorage.getItem(AI_PROVIDER_STORE) || 'gemini'; } catch { return 'gemini'; } }
 function getOpenaiKey()   { try { return localStorage.getItem(OPENAI_KEY_STORE)  || ''; } catch { return ''; } }
 function getClaudeKey()   { try { return localStorage.getItem(CLAUDE_KEY_STORE)  || ''; } catch { return ''; } }
@@ -1371,7 +1386,7 @@ $('saveKeyBtn').addEventListener('click', () => {
         if (cKey) localStorage.setItem(CLAUDE_KEY_STORE, cKey); else localStorage.removeItem(CLAUDE_KEY_STORE);
         if (dsKey) localStorage.setItem(DEEPSEEK_KEY_STORE, dsKey); else localStorage.removeItem(DEEPSEEK_KEY_STORE);
         if (gas)  localStorage.setItem(GAS_URL_STORE, gas);     else localStorage.removeItem(GAS_URL_STORE);
-        driveBtn.disabled = !state.file || !gas;
+        driveBtn.disabled = !state.file;   // clickable whenever a PDF is loaded; click guides to Settings if no URL
         $('keyStatus').textContent = '✓ Saved';
         setTimeout(() => { $('keyStatus').textContent = ''; $('settingsOverlay').classList.remove('open'); }, 900);
         refreshSettingsUI();
@@ -1875,7 +1890,13 @@ driveBtn.addEventListener('click', async () => {
     }
     const gasUrl = getGasUrl();
     if (!gasUrl) {
-        setDriveStatus('GDrive URL not set — open ⚙ Settings and paste your Apps Script /exec URL.', 'error'); return;
+        // No Drive link saved on THIS device. Settings live in this browser's local
+        // storage, so a URL added on a computer doesn't carry over to a phone (and
+        // vice-versa). Don't fail silently — explain it and open Settings to the field.
+        setDriveStatus('Google Drive isn\'t set up on this device yet. Settings are saved separately on each phone/computer — paste your Apps Script <strong>/exec</strong> URL in ⚙ Settings (opening now), then tap <strong>Save All</strong>.', 'error');
+        $('settingsBtn').click();
+        setTimeout(() => { try { $('gasUrlInput').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('gasUrlInput').focus(); } catch (e) {} }, 120);
+        return;
     }
 
     const filename   = buildFileName();
@@ -1918,7 +1939,7 @@ driveBtn.addEventListener('click', async () => {
         console.error('GDrive upload error:', err);
         setDriveStatus('✕ Upload failed: ' + err.message, 'error');
     } finally {
-        driveBtn.disabled = !getGasUrl();
+        driveBtn.disabled = !state.file;
         driveBtn.innerHTML = '☁ Send to GDrive';
     }
 });
@@ -3072,7 +3093,7 @@ async function processFile(file) {
         detailsPanel.classList.add('show');
         filenamePreview.style.display = 'block';
         downloadBtn.disabled = false;
-        driveBtn.disabled    = !getGasUrl();   // enabled only when GAS URL is configured
+        driveBtn.disabled    = false;   // clickable when a PDF is loaded; tapping without a Drive URL opens Settings
         geminiScanRow.style.display = hasAiKey() ? 'block' : 'none';  // show manual AI scan if a key is set
         geminiScanStatus.className = 'gemini-status';
 
@@ -3087,7 +3108,7 @@ async function processFile(file) {
         detailsPanel.classList.add('show');
         filenamePreview.style.display = 'block';
         downloadBtn.disabled = false;
-        driveBtn.disabled    = !getGasUrl();
+        driveBtn.disabled    = false;   // clickable when a PDF is loaded; tapping without a Drive URL opens Settings
         geminiScanRow.style.display = hasAiKey() ? 'block' : 'none';
         updatePreview();
     }
