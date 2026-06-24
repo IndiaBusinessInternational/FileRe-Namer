@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v3.34</title>
+    <title>IBI File Re-Namer v3.35</title>
 
     <!-- Favicon: IBI text in cyan on black background, Roboto font -->
     <link rel="icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23000000'/%3E%3Ctext x='50%25' y='50%25' font-family='Roboto, Arial, sans-serif' font-size='22' font-weight='900' fill='%2300c5ff' dominant-baseline='central' text-anchor='middle'%3EIBI%3C/text%3E%3C/svg%3E" type="image/svg+xml">
@@ -949,7 +949,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v3.34</span>
+        <span class="version-tag">v3.35</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1116,7 +1116,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.34</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.35</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -2666,12 +2666,26 @@ function detectProductName(text) {
         }
     }
 
+    // ===== Strategy 0d: IBI brand followed by a "|"-delimited product (Amazon) =====
+    // Amazon prints IBI items as "iINTELLIGENCEi | <Product> | <marketing copy>, N Qty. |
+    // <ASIN> ( <code> ) HSN:<n>". The leading pipe defeats the space-separated brand
+    // patterns below, so grab the clean segment right after the brand separator, stopping
+    // at the next pipe / comma / HSN / ASIN / Qty. shortenProductName trims any remainder.
+    {
+        const m = normalized.match(/i?\s*intelligence\s*i?\s*[|:\-]\s*([A-Za-z][^|\n]{3,100}?)(?=\s*\||\s+HSN\b|\s+B0[A-Z0-9]{8}\b|\s*,|\s+\d+\s*qty\b|$)/i);
+        if (m && m[1]) {
+            const c = tryReturn(m[1]);
+            if (c) return c;
+        }
+    }
+
     // ===== Strategy 1: Brand-prefixed names (iINTELLIGENCEi …) =====
     // Catches product names that start with the IBI brand — but stripBrandPrefixes
-    // removes the brand from the final output.
+    // removes the brand from the final output. The separator class allows a "|"/":" too,
+    // so a piped Amazon title still parses if Strategy 0d was skipped.
     const brandPatterns = [
-        /\b(i?\s*intelligence\s*i?[\s\-]+[A-Za-z][^\n]{4,120}?)(?=\s+(?:HSN|SKU|FSN|ASIN|Qty|Quantity|MRP|₹|Rs\.?\s*\d|\d{6,}|$))/i,
-        /\b(i?\s*intelligence\s*i?[\s\-]+[A-Za-z][\w\s\-,&'.()/]{4,100})/i
+        /\b(i?\s*intelligence\s*i?[\s\-|:]+[A-Za-z][^\n]{4,120}?)(?=\s+(?:HSN|SKU|FSN|ASIN|Qty|Quantity|MRP|₹|Rs\.?\s*\d|\d{6,}|$))/i,
+        /\b(i?\s*intelligence\s*i?[\s\-|:]+[A-Za-z][\w\s\-,&'.()/]{4,100})/i
     ];
     for (const re of brandPatterns) {
         const m = normalized.match(re);
