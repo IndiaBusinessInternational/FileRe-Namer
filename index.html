@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v3.33</title>
+    <title>IBI File Re-Namer v3.34</title>
 
     <!-- Favicon: IBI text in cyan on black background, Roboto font -->
     <link rel="icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23000000'/%3E%3Ctext x='50%25' y='50%25' font-family='Roboto, Arial, sans-serif' font-size='22' font-weight='900' fill='%2300c5ff' dominant-baseline='central' text-anchor='middle'%3EIBI%3C/text%3E%3C/svg%3E" type="image/svg+xml">
@@ -178,22 +178,25 @@
             line-height: 1;
         }
 
-        /* ========== LOGO ========== */
+        /* ========== LOGO (full-width banner) ========== */
         .logo-wrapper {
             width: 100%;
-            max-width: 720px;
-            padding: 30px 20px 10px;
+            max-width: none;          /* full bleed — spans the whole viewport, left to right */
+            padding: 0;
+            background: #000;         /* matches the logo's black backdrop for a seamless band */
             text-align: center;
+            line-height: 0;           /* kill the inline-image baseline gap */
         }
 
         .company-logo {
-            max-width: 100%;
+            width: 100%;
             height: auto;
-            width: 560px;
+            max-height: 340px;        /* prominent but not overwhelming on wide screens */
+            object-fit: contain;      /* never crop the logo text/graphic */
             display: block;
             margin: 0 auto;
-            border-radius: var(--radius-md);
-            box-shadow: var(--shadow-md);
+            border-radius: 0;         /* edge-to-edge */
+            box-shadow: none;
         }
 
         /* ========== APP CARD ========== */
@@ -706,12 +709,13 @@
             }
 
             .logo-wrapper {
-                padding: 20px 16px 8px;
+                padding: 0;
             }
 
             .company-logo {
                 width: 100%;
-                max-width: 420px;
+                max-width: none;
+                max-height: 200px;
             }
 
             .app-card {
@@ -945,7 +949,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v3.33</span>
+        <span class="version-tag">v3.34</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1112,7 +1116,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.33</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.34</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1771,7 +1775,7 @@ Extract the details and return ONLY a valid JSON object (no markdown, no code fe
 {
   "docType": "invoice" or "manifest" — "manifest" if it is a multi-row pickup/handover list (Courier, S.No table); otherwise "invoice",
   "platform": "Amazon" | "Flipkart" | "Shopsy" | "Meesho" | "ShopClues" | null,
-  "product": "<main product name, concise, WITHOUT quantity words, null for manifests>",
+  "product": "<core product name ONLY — keep material + type + head noun, REMOVE every marketing adjective (e.g. drop 'Anti-Slip', 'Natural', 'Premium', 'Coconut Fiber', 'Entrance', 'Welcome', 'Heavy Duty'). APPEND the size (Small/Medium/Large/XL) or dimensions (e.g. '60x40 cm', '11.5 L') whenever shown — prefer the size in the SKU. Example: 'Coir Door Mat Small'. No quantity words. null for manifests>",
   "quantity": <integer total quantity of the product, null if unknown>,
   "orderCount": <integer number of orders/shipment rows, only for manifests, else null>,
   "invoiceDate": "<the INVOICE DATE in DD-MM-YYYY format. This is labelled 'Invoice Date' (on Amazon it is on the RIGHT side, just below 'Invoice Details'). NEVER use 'Order Date'. null if not found>",
@@ -2769,14 +2773,116 @@ function detectProductName(text) {
     return '';
 }
 
+// =================== SIZE / DIMENSION EXTRACTION ===================
+// Pulls a size (Small/Medium/Large/XL…) or dimensions (e.g. "60x40 cm", "11.5 Liters")
+// out of the raw document text so it can be appended to the product name — sizes make an
+// order easy to identify for further processing. "Free Size" is intentionally ignored (it
+// is not a distinguishing size). Robust to either column order the Meesho SKU/Size table
+// linearises into (headers-then-values OR row-interleaved).
+function extractSizeOrDimensions(text) {
+    if (!text) return '';
+    const t = String(text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const SIZE = '(extra\\s*small|extra\\s*large|xx?x?[\\s\\-]?large|small|medium|large)';
+    const titleCase = w => w.replace(/\s+/g, ' ').trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+
+    // 1) Dimensions with units — most identifying, and safe because the unit anchors it.
+    let m = t.match(/\b(\d{1,4}(?:\.\d+)?)\s*[x×*]\s*(\d{1,4}(?:\.\d+)?)(?:\s*[x×*]\s*(\d{1,4}(?:\.\d+)?))?\s*(cm|mm|inch(?:es)?|in|ft|feet|foot|mtr|meter|metre)?\b/i);
+    if (m) {
+        let dim = m[1] + 'x' + m[2] + (m[3] ? 'x' + m[3] : '');
+        if (m[4]) dim += ' ' + m[4].toLowerCase();
+        return dim;
+    }
+    m = t.match(/\b(\d{1,4}(?:\.\d+)?)\s*(litres?|liters?|ltrs?|ml|kgs?|gms?|grams?|gsm|inch(?:es)?|feet|foot|ft|cm|mm)\b/i);
+    if (m) { const u = m[2]; return m[1] + ' ' + (u.length <= 2 ? u.toLowerCase() : titleCase(u)); }
+
+    // 2) Size word inside the SKU / "Product Details" block (works regardless of column order).
+    m = t.match(new RegExp('\\b(?:SKU|Product\\s+Details)\\b[\\s\\S]{0,90}?\\b' + SIZE + '\\b', 'i'));
+    if (m) return titleCase(m[1]);
+
+    // 3) An explicit "Size: <value>" field (still skips the meaningless "Free Size").
+    m = t.match(new RegExp('\\bsize\\b\\s*[:\\-]?\\s*' + SIZE + '\\b', 'i'));
+    if (m) return titleCase(m[1]);
+
+    return '';
+}
+
+// Product "head nouns" — the word naming what the item actually IS. In a marketing title
+// everything after the first head noun is descriptive padding (adjectives, repeated nouns)
+// and gets dropped — except size/dimension tokens, which are kept.
+const PRODUCT_HEAD_NOUNS = new Set([
+    'mat','doormat','brush','broom','broomstick','rope','shell','scrubber','scrub','uruli',
+    'tray','bucket','kadhai','pot','pan','tawa','wok','kettle','bottle','flask','box','tin',
+    'bin','basket','jar','ladle','spoon','fork','knife','mug','cup','glass','tumbler','bowl',
+    'plate','dish','comb','dustpan','wiper','mop','duster','sponge','cloth','towel','napkin',
+    'bag','cover','holder','stand','rack','organizer','organiser','container','leaf','leaves',
+    'remover','cutter','peeler','grater','strainer','sieve','colander','funnel','whisk','roller',
+    'board','hanger','hook','clip','net','sheet','lamp','kit','set','opener','masher','chopper',
+    'slicer','tongs','skimmer','frother','churner','grinder','mixer','can','saucer','rug','carpet'
+]);
+function isProductHeadNoun(w) {
+    const n = w.toLowerCase().replace(/[^a-z]/g, '');
+    if (!n) return false;
+    if (PRODUCT_HEAD_NOUNS.has(n)) return true;
+    if (n.endsWith('es') && PRODUCT_HEAD_NOUNS.has(n.slice(0, -2))) return true; // brushes→brush
+    if (n.endsWith('s')  && PRODUCT_HEAD_NOUNS.has(n.slice(0, -1))) return true; // mats→mat
+    return false;
+}
+
+// A word that is itself a size or dimension token (kept even when it trails the head noun).
+const SIZE_KEEP_WORDS = new Set(['small','medium','large','extra','xl','xxl','xxxl','xs']);
+const SIZE_UNIT_WORDS = new Set(['cm','mm','inch','inches','in','ft','feet','foot','m','mtr','meter','metre','litre','litres','liter','liters','ltr','ltrs','ml','kg','kgs','g','gm','gms','gram','grams','gsm','l']);
+function isSizeOrDimToken(w) {
+    const n = w.toLowerCase().replace(/[^a-z0-9.×x]/g, '');
+    if (!n) return false;
+    if (/^\d+(\.\d+)?$/.test(n)) return true;                          // 11.5
+    if (/^\d+(\.\d+)?(?:[x×]\d+(\.\d+)?){1,2}$/.test(n)) return true;  // 60x40 / 60x40x5
+    if (n === 'x' || n === '×') return true;                          // dimension connector
+    if (SIZE_KEEP_WORDS.has(n)) return true;
+    if (SIZE_UNIT_WORDS.has(n)) return true;
+    return false;
+}
+
+// Drop marketing adjectives that trail the core product. Keep everything up to and
+// including the head noun (extended through adjacent head nouns so compounds like
+// "Cup Holder" / "Shell Bowl" stay whole), plus any immediately-following size/dimension
+// tokens, then discard the rest — but only when that tail is clearly padding (2+ leftover
+// words, or the SAME head-noun word is repeated later, the doubled-noun marketing pattern).
+function stripTrailingAdjectives(core) {
+    const words = core.split(/\s+/).filter(Boolean);
+    if (words.length < 3) return core;
+    const bare = w => w.toLowerCase().replace(/[^a-z]/g, '');
+    let headIdx = -1;
+    for (let i = 0; i < words.length; i++) {
+        if (isProductHeadNoun(words[i])) { headIdx = i; break; }
+    }
+    if (headIdx === -1 || headIdx === words.length - 1) return core; // none, or nothing trails it
+    let end = headIdx;                                  // absorb consecutive head nouns (compounds)
+    while (end + 1 < words.length && isProductHeadNoun(words[end + 1])) end++;
+    const kept = words.slice(0, end + 1);
+    let i = end + 1;
+    for (; i < words.length; i++) {                    // keep a run of size/dimension tokens
+        if (isSizeOrDimToken(words[i])) kept.push(words[i]); else break;
+    }
+    const trailing = words.slice(i);
+    if (trailing.length === 0) return kept.join(' ');
+    const headWords = new Set(kept.map(bare));
+    const headRepeats = trailing.some(w => headWords.has(bare(w)));
+    if (trailing.length >= 2 || headRepeats) return kept.join(' ');
+    return core;                                       // lone non-head trailing word → keep
+}
+
 // =================== PRODUCT NAME SHORTENER ===================
-// Trims long marketing titles to a concise filename-friendly name, keeping the core
-// product plus its first key feature. Applies to every platform. Examples:
+// Trims long marketing titles to a concise filename-friendly name: the core product
+// (material + type + head noun) with ALL trailing adjectives removed, plus the size or
+// dimensions when available. Applies to every platform. Examples:
+//   "Natural Coir Door Mat Anti Slip Coconut Fiber Entrance Welcome Mat" (SKU "Coir Mat Small")
+//                                                          → "Coir Door Mat Small"
 //   "Natural Clay Kadhai with Lid & Handles Traditional Earthen Cooking Pot 1 Pc"
 //                                                          → "Clay Kadhai & Lid"
 //   "Aluminium Bucket Medium 11.5 Liters | BIS Certified" → "Aluminium Bucket Medium 11.5 Liters"
+// Pass the full document text as the 2nd arg to let the size/dimension be appended.
 // The Product Name field stays editable, so the user can always fine-tune the result.
-function shortenProductName(raw) {
+function shortenProductName(raw, fullText) {
     if (!raw) return raw;
     let s = String(raw).replace(/\s+/g, ' ').trim();
 
@@ -2790,7 +2896,7 @@ function shortenProductName(raw) {
     s = s.replace(/[,\s]+$/, '').trim();
 
     // Marketing / generic filler words that add length but no identity.
-    const FILLER = new Set(['natural','traditional','premium','handmade','earthen','pure','original','authentic','stylish','designer','heavy','quality','super','eco','friendly','multipurpose','multi','purpose','cooking','branded','new','latest','best','luxury','classic','solid','genuine','high','grade','for','the','a','an','of']);
+    const FILLER = new Set(['natural','traditional','premium','handmade','earthen','pure','original','authentic','stylish','designer','heavy','quality','super','eco','friendly','multipurpose','multi','purpose','cooking','branded','new','latest','best','luxury','classic','solid','genuine','high','grade','reusable','foldable','portable','washable','waterproof','durable','lightweight','decorative','antislip','nonstick','for','the','a','an','of']);
     const norm = w => w.toLowerCase().replace(/[^a-z0-9]/g, '');
     const dropFiller = words => { const kept = words.filter(w => w && !FILLER.has(norm(w))); return kept.length ? kept : words; };
 
@@ -2799,6 +2905,7 @@ function shortenProductName(raw) {
     let core = m ? m[1] : s;
     const featurePart = m ? m[2] : '';
     core = dropFiller(core.split(/\s+/)).join(' ').replace(/[,\s]+$/, '').trim();
+    core = stripTrailingAdjectives(core);             // drop trailing marketing adjectives
 
     let result = core;
     if (featurePart) {
@@ -2817,6 +2924,14 @@ function shortenProductName(raw) {
     if (result.length > 42) {                         // backstop for titles with no separators
         result = result.slice(0, 42).replace(/\s+\S*$/, '').trim();
         result = result.replace(/[,&\s]+$/, '').trim();
+    }
+
+    // Append the size / dimensions for easy order identification (if not already present).
+    if (fullText) {
+        const size = extractSizeOrDimensions(fullText);
+        if (size && !new RegExp('\\b' + size.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(result)) {
+            result = (result + ' ' + size).trim();
+        }
     }
     return result || raw;
 }
@@ -2959,7 +3074,7 @@ function isOrderPage(text) {
 
 // Extract the single product + qty from one invoice/label page.
 function extractOrderFromPage(pageText) {
-    const product = shortenProductName(detectProductName(pageText));
+    const product = shortenProductName(detectProductName(pageText), pageText);
     const qty     = detectQuantity(pageText);
     return product ? { product, qty: qty || 1 } : null;
 }
@@ -3041,7 +3156,7 @@ async function processFile(file) {
             detectedProduct = multiOrders.map(o => `${o.product} ${o.qty} Qty`).join(', ');
             detectedQty = multiOrders.length; // quantity field repurposed as order count
         } else {
-            detectedProduct = shortenProductName(detectProductName(text));
+            detectedProduct = shortenProductName(detectProductName(text), text);
             detectedQty     = detectQuantity(text);
 
             // Append color variant (e.g. "Navy Blue") when present in the product description.
