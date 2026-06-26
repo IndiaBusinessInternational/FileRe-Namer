@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v3.37</title>
+    <title>IBI File Re-Namer v3.39</title>
 
     <!-- Favicon: IBI text in cyan on black background, Roboto font -->
     <link rel="icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23000000'/%3E%3Ctext x='50%25' y='50%25' font-family='Roboto, Arial, sans-serif' font-size='22' font-weight='900' fill='%2300c5ff' dominant-baseline='central' text-anchor='middle'%3EIBI%3C/text%3E%3C/svg%3E" type="image/svg+xml">
@@ -949,7 +949,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v3.37</span>
+        <span class="version-tag">v3.39</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1116,7 +1116,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.37</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.39</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -2578,6 +2578,11 @@ function isReasonableProductName(s) {
     // v3.9: Reject pure column-header captures (when Strategy 0a accidentally captures
     // a header word instead of the product, the result should fall through to next strategy)
     if (/^(?:unit\s+price|unitprice|net\s+amount|netamount|tax\s+rate|tax\s+type|tax\s+amount|total\s+amount|gross\s+amount|gross|taxable\s+value|product\s+code|item\s+code|hsn(?:\s+code)?|sku(?:\s+id)?|fsn|asin|sac|igst|cgst|sgst|cess|quantity|qty|discount|rate|type|price|subtotal|handling\s+fee)\s*$/i.test(s.trim())) return false;
+    // v3.38: Reject captures that START with a measurement / packaging word — a real
+    // product name never begins with "Inch", "Dia", "Qty", "Pack", "Cm"… These slip in
+    // when a strategy grabs a dimension fragment ("9 Inch Dia" → "Inch Dia") instead of
+    // the actual product, and should fall through to a later strategy.
+    if (/^(?:inch(?:es)?|dia|cm|mm|ft|feet|foot|mtr|metres?|meters?|litres?|liters?|ltrs?|ml|kgs?|gms?|grams?|gsm|qty|quantity|pack|pcs?|pieces?|set|combo|nos?|units?|free\s+size|size)\b/i.test(s.trim())) return false;
     return true;
 }
 
@@ -2618,6 +2623,24 @@ function detectProductName(text) {
         return isReasonableProductName(c) ? c : null;
     };
 
+    // Helper: iterate EVERY match of a global regex, returning the first capture
+    // group that yields a reasonable product name. Essential when an earlier match
+    // captures a SKU code or header cell instead of the product — e.g. Flipkart's
+    // shipping-label row "SKU ID | Description QTY 1 DP-AL-27X23-2Qty." precedes the
+    // real invoice row "Product Description … IBI Aluminium Dustpan". A plain .match()
+    // would lock onto the first (the SKU), fail validation, and give up; tryAll skips
+    // past it to the row that actually holds the name. Pass a regex with the /g flag.
+    const tryAll = (re) => {
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(normalized)) !== null) {
+            const c = tryReturn(m[1]);
+            if (c) return c;
+            if (re.lastIndex === m.index) re.lastIndex++;   // guard against zero-width match
+        }
+        return null;
+    };
+
     // ===== Strategy 0a: Description/Product column-start =====
     // Handles all platform invoice table formats:
     //   Amazon:      "Description UnitPrice Qty NetAmount Tax Rate ... 1 ProductName, ..."
@@ -2627,11 +2650,8 @@ function detectProductName(text) {
     // Captures product name after consuming column headers, stops at first comma or pipe.
     // Brand-stripped result must pass isReasonableProductName to be returned.
     {
-        const m = normalized.match(/\b(?:description|product)\b(?:\s+(?:description|price|hsn|unitprice|unit\s+price|netamount|net\s+amount|qty|quantity|gross\s*amount|gross|amount|discount|taxable\s+value|tax(?:es)?|igst|cgst|sgst|cess|type|total|rate))+\s+(?:\d+\.?\s+)?([A-Za-z][^,|]{3,150})/i);
-        if (m) {
-            const c = tryReturn(m[1]);
-            if (c) return c;
-        }
+        const c = tryAll(/\b(?:description|product)\b(?:\s+(?:description|price|hsn|unitprice|unit\s+price|netamount|net\s+amount|qty|quantity|gross\s*amount|gross|amount|discount|taxable\s+value|tax(?:es)?|igst|cgst|sgst|cess|type|total|rate))+\s+(?:\d+\.?\s+)?([A-Za-z][^,|]{3,150})/gi);
+        if (c) return c;
     }
 
     // ===== Strategy 0b: Amazon parenthetical-before-HSN =====
@@ -2652,31 +2672,35 @@ function detectProductName(text) {
         }
     }
 
-    // ===== Strategy 0c: Generic row-numbered product extractor =====
-    // Catches unknown products (not in keyword list) by pattern:
-    //   "1 Therali Leaves 50 Qty Pack | B0XYZ" → "Therali Leaves"
-    //   "1 Aluminium Uruli, 17 No. Size"       → "Aluminium Uruli"
-    // IMPORTANT: digit prefix is restricted to 1-2 digits (row numbers like "1", "2")
-    // to avoid false-matches like "629159 If undelivered" where "629159" is a PIN code.
-    {
-        const m = normalized.match(/(?:^|\s)\b\d{1,2}\s+([A-Z][A-Za-z][\w\s'\-&.()/]{3,100}?)(?=\s*[,|]|\s+HSN\s*[:\-]?|\s+ASIN\s*[:\-]?|\s+SKU\s*[:\-]?|\s+B0[A-Z0-9]{8}\b)/);
-        if (m) {
-            const c = tryReturn(m[1]);
-            if (c) return c;
-        }
-    }
-
-    // ===== Strategy 0d: IBI brand followed by a "|"-delimited product (Amazon) =====
-    // Amazon prints IBI items as "iINTELLIGENCEi | <Product> | <marketing copy>, N Qty. |
-    // <ASIN> ( <code> ) HSN:<n>". The leading pipe defeats the space-separated brand
-    // patterns below, so grab the clean segment right after the brand separator, stopping
-    // at the next pipe / comma / HSN / ASIN / Qty. shortenProductName trims any remainder.
+    // ===== Strategy 0c: IBI brand followed by a "|"-delimited product =====
+    // IBI items print as "iINTELLIGENCEi | <Product> | <marketing copy>, N Qty. |
+    // <ASIN> ( <code> ) HSN:<n>" (Amazon) or "...Total iINTELLIGENCEi | Banana Leaves
+    // Round-Cut, 9 Inch Dia, 10 Qty Pack..." (Meesho invoice row). The pipe defeats the
+    // space-separated brand patterns below, so grab the clean segment right after the brand
+    // separator, stopping at the next pipe / comma / HSN / ASIN / Qty. shortenProductName
+    // trims any remainder.
+    // MUST run before the generic digit-prefix extractor (0d): on a piped row that one
+    // greedily matches dimension fragments like "9 Inch Dia" → "Inch Dia" before reaching
+    // the real product, which lives after the brand pipe.
     {
         const m = normalized.match(/i?\s*intelligence\s*i?\s*[|:\-]\s*([A-Za-z][^|\n]{3,100}?)(?=\s*\||\s+HSN\b|\s+B0[A-Z0-9]{8}\b|\s*,|\s+\d+\s*qty\b|$)/i);
         if (m && m[1]) {
             const c = tryReturn(m[1]);
             if (c) return c;
         }
+    }
+
+    // ===== Strategy 0d: Generic row-numbered product extractor =====
+    // Catches unknown products (not in keyword list) by pattern:
+    //   "1 Therali Leaves 50 Qty Pack | B0XYZ" → "Therali Leaves"
+    //   "1 Aluminium Uruli, 17 No. Size"       → "Aluminium Uruli"
+    // IMPORTANT: digit prefix is restricted to 1-2 digits (row numbers like "1", "2")
+    // to avoid false-matches like "629159 If undelivered" where "629159" is a PIN code.
+    // isReasonableProductName rejects captures that begin with a measurement/packaging
+    // word (Inch, Dia, Qty, Pack…) so dimension fragments like "9 Inch Dia" are skipped.
+    {
+        const c = tryAll(/(?:^|\s)\b\d{1,2}\s+([A-Z][A-Za-z][\w\s'\-&.()/]{3,100}?)(?=\s*[,|]|\s+HSN\s*[:\-]?|\s+ASIN\s*[:\-]?|\s+SKU\s*[:\-]?|\s+B0[A-Z0-9]{8}\b)/g);
+        if (c) return c;
     }
 
     // ===== Strategy 1: Brand-prefixed names (iINTELLIGENCEi …) =====
@@ -2778,7 +2802,8 @@ function detectProductName(text) {
         { test: /coconut\s+shell/, name: 'Coconut Shell' },
         { test: /scrubber|kitchen\s+scrub/, name: 'Scrubber' },
         { test: /uruli/, name: 'Aluminium Uruli' },
-        { test: /aluminium?\s+(?:square\s+)?tray|aluminum\s+(?:square\s+)?tray/, name: 'Aluminium Tray' }
+        { test: /aluminium?\s+(?:square\s+)?tray|aluminum\s+(?:square\s+)?tray/, name: 'Aluminium Tray' },
+        { test: /dust\s*pan/, name: 'Aluminium Dustpan' }
     ];
     for (const p of shortPatterns) {
         if (p.test.test(t)) return p.name;
