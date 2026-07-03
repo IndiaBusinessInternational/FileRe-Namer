@@ -1,5 +1,5 @@
 /**
- * IBI File Re-Namer — Google Drive Upload Endpoint  (v3 — dedup + 15-day retention)
+ * IBI File Re-Namer — Google Drive Upload Endpoint  (v5 — conflict prompt + 30-day retention)
  * Google Apps Script (GAS) Web App
  *
  * ══════════════════════════════════════════════════════════════════════
@@ -8,31 +8,38 @@
  *     Otherwise Google keeps running the OLD code.
  * ══════════════════════════════════════════════════════════════════════
  *
- *  WHAT'S NEW IN v3:
- *   • 15-day rolling retention — order folders older than KEEP_DAYS are auto-
- *     trashed on each upload (saves Drive space). Optional dailyCleanup trigger
- *     keeps it tidy even on no-upload days.
+ *  WHAT'S NEW IN v4:
+ *   • DUPLICATE PROMPT instead of silent replace. If a file with the EXACT same
+ *     name already exists in the target "Orders <date>" folder, the upload pauses
+ *     and the website asks: Overwrite, or Rename (keep both)?
+ *       – Overwrite → the existing same-name file is trashed and replaced.
+ *       – Rename    → saved as "name (2).pdf", "name (3).pdf", … (next free number),
+ *                     so two genuinely-different orders that share a filename are
+ *                     BOTH kept (no data loss).
+ *     (v3 used to auto-trash same-order files silently — that could lose a real
+ *      second order. v4 never deletes anything without an explicit Overwrite.)
+ *   • 30-day rolling retention (see purgeOldFolders / dailyCleanup). v4 kept 15 days.
  *
  *  DEPLOY (first time):
  *  1. Paste this whole file into your Apps Script project.
  *  2. Deploy ▸ New deployment ▸ type "Web app".
  *  3. Execute as: Me   |   Who has access: Anyone
  *  4. Authorize Drive access when prompted (Advanced ▸ Go to project ▸ Allow).
- *  5. Copy the /exec URL into IBI File Re-Namer ▸ ⚙ Settings.
+ *  5. Copy the /exec URL into IBI File Re-Namer ▸ ⚙ Settings (or DEFAULT_GAS_URL).
  *
  *  FOLDER STRUCTURE:
  *    IBI Daily Orders / Orders 1 June 2026 / <renamed file>.pdf
  *
- *  DE-DUPLICATION:
- *    Before saving, ALL existing files under "IBI Daily Orders" (every date
- *    subfolder) that match the same ORDER are trashed — both exact-name matches
- *    and "same order, different pickup/ship date" matches. So the same order can
- *    never be stored twice, even if re-uploaded with a corrected ship date.
+ *  REQUEST BODY (JSON):
+ *    { filename, pdfBase64, folderDate, conflict }
+ *    conflict: ""          → check first; if the name exists, reply {conflict:true}
+ *              "overwrite" → trash the existing same-name file, then save
+ *              "rename"    → save as the next free "name (n).pdf"
  */
 
 // ─── CONFIG ────────────────────────────────────────────────────
 const ROOT_FOLDER_NAME = 'IBI Daily Orders';
-const KEEP_DAYS = 15;   // rolling retention: folders older than this many days are auto-deleted
+const KEEP_DAYS = 30;   // rolling retention: folders older than this many days are auto-deleted
 // ───────────────────────────────────────────────────────────────
 
 function doPost(e) {
@@ -40,9 +47,10 @@ function doPost(e) {
     if (!e || !e.postData || !e.postData.contents) throw new Error('No POST data received');
 
     const body       = JSON.parse(e.postData.contents);
-    const filename    = String(body.filename || '').trim();
-    const pdfBase64   = body.pdfBase64;
-    const folderDate  = String(body.folderDate || '').trim().replace(/\s+/g, ' ');
+    const filename   = String(body.filename || '').trim();
+    const pdfBase64  = body.pdfBase64;
+    const folderDate = String(body.folderDate || '').trim().replace(/\s+/g, ' ');
+    const conflict   = String(body.conflict || '').trim().toLowerCase();  // '', 'overwrite', 'rename'
 
     if (!filename)   throw new Error('Missing filename');
     if (!pdfBase64)  throw new Error('Missing PDF data');
@@ -52,26 +60,36 @@ function doPost(e) {
     const parent     = getOrCreateFolder(root, ROOT_FOLDER_NAME);
     const dateFolder = getOrCreateFolder(parent, 'Orders ' + folderDate);
 
-    // ── DE-DUPLICATION across ALL "Orders ..." subfolders ──
-    const newKey = stableKey(filename);
-    let removed = 0;
-    const subs = parent.getFolders();
-    while (subs.hasNext()) {
-      const sf = subs.next();
-      const files = sf.getFiles();
-      while (files.hasNext()) {
-        const f = files.next();
-        const fn = f.getName();
-        // Trash if exact same name OR same order (same key, pickup date ignored)
-        if (fn === filename || stableKey(fn) === newKey) {
-          f.setTrashed(true);
-          removed++;
-        }
-      }
+    // Existing files with the EXACT same name in this date folder.
+    const existing = [];
+    const dup = dateFolder.getFilesByName(filename);
+    while (dup.hasNext()) existing.push(dup.next());
+
+    // ── CHECK MODE: a same-name file exists and the caller hasn't chosen yet ──
+    if (existing.length > 0 && conflict !== 'overwrite' && conflict !== 'rename') {
+      return json({
+        success:       false,
+        conflict:      true,
+        filename:      filename,
+        folder:        'Orders ' + folderDate,
+        existingCount: existing.length,
+        existingUrl:   'https://drive.google.com/file/d/' + existing[0].getId() + '/view',
+        suggestedName: nextAvailableName(dateFolder, filename)
+      });
     }
 
-    // ── Save the new file ──
-    const blob = Utilities.newBlob(Utilities.base64Decode(pdfBase64), MimeType.PDF, filename);
+    // ── Decide the name to save under ──
+    let saveName = filename;
+    let replaced = 0;
+    if (conflict === 'overwrite') {
+      for (let i = 0; i < existing.length; i++) { existing[i].setTrashed(true); replaced++; }
+    } else if (conflict === 'rename') {
+      saveName = nextAvailableName(dateFolder, filename);
+    }
+    // (no existing file, or conflict already resolved → just save as saveName)
+
+    // ── Save the file ──
+    const blob = Utilities.newBlob(Utilities.base64Decode(pdfBase64), MimeType.PDF, saveName);
     const file = dateFolder.createFile(blob);
 
     // ── RETENTION: delete order folders older than KEEP_DAYS (rolling window) ──
@@ -79,9 +97,11 @@ function doPost(e) {
 
     return json({
       success:    true,
-      filename:   filename,
+      filename:   saveName,
+      requested:  filename,
+      renamed:    (saveName !== filename),
+      replaced:   replaced,
       folder:     'Orders ' + folderDate,
-      replaced:   removed,
       purged:     purgedFolders,
       fileId:     file.getId(),
       fileUrl:    'https://drive.google.com/file/d/' + file.getId() + '/view',
@@ -94,7 +114,19 @@ function doPost(e) {
 }
 
 function doGet() {
-  return json({ status: 'active', rootFolder: ROOT_FOLDER_NAME, keepDays: KEEP_DAYS, version: 3 });
+  return json({ status: 'active', rootFolder: ROOT_FOLDER_NAME, keepDays: KEEP_DAYS, version: 4, conflictPrompt: true });
+}
+
+/**
+ * Next free "name (n).pdf" in the folder, starting at (2). Used for the "Rename — keep
+ * both" choice so two genuinely-different orders that share a filename are both preserved.
+ */
+function nextAvailableName(folder, filename) {
+  const ext  = /\.pdf$/i.test(filename) ? filename.slice(filename.lastIndexOf('.')) : '';
+  const base = ext ? filename.slice(0, filename.length - ext.length) : filename;
+  let n = 2;
+  while (folder.getFilesByName(base + ' (' + n + ')' + ext).hasNext()) n++;
+  return base + ' (' + n + ')' + ext;
 }
 
 /**
@@ -118,8 +150,8 @@ function parseFolderDate(folderName) {
 
 /**
  * Rolling retention. Deletes (trashes) any "Orders <date>" folder whose date is
- * KEEP_DAYS or more days before today. With KEEP_DAYS = 15: today plus the
- * previous 14 days are kept (15 folders); on the 16th day the 1st day's folder
+ * KEEP_DAYS or more days before today. With KEEP_DAYS = 30: today plus the
+ * previous 29 days are kept (30 folders); on the 31st day the 1st day's folder
  * is removed, and so on. Folders whose names don't parse as a date are ignored.
  */
 function purgeOldFolders(parent, keepDays) {
@@ -150,24 +182,6 @@ function dailyCleanup() {
   const parent = getOrCreateFolder(DriveApp.getRootFolder(), ROOT_FOLDER_NAME);
   const n = purgeOldFolders(parent, KEEP_DAYS);
   Logger.log('dailyCleanup: trashed ' + n + ' folder(s) older than ' + KEEP_DAYS + ' days.');
-}
-
-/**
- * Stable order key: filename minus the " D <pickup date>" tail and extension,
- * lower-cased. So these all collapse to the same key:
- *   "Amazon Food Strainer 1 Qty 31 May 2026 D 1 June 2026.pdf"
- *   "Amazon Food Strainer 1 Qty 31 May 2026 D 31 May.pdf"
- *   → "amazon food strainer 1 qty 31 may 2026"
- * The tail is matched specifically as " D <day> <month> [year]" so product names
- * that contain a stand-alone " D " (e.g. "Vitamin D ...") are NOT mis-stripped.
- */
-function stableKey(filename) {
-  return String(filename)
-    .replace(/\.pdf$/i, '')
-    .replace(/\s+D\s+\d{1,2}\s+[A-Za-z]+(?:\s+\d{4})?\s*$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
 }
 
 function getOrCreateFolder(parent, name) {
