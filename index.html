@@ -3,7 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v3.40</title>
+    <title>IBI File Re-Namer v3.42</title>
+    <!-- Open Graph / social sharing -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="India Business International">
+    <meta property="og:title" content="IBI File Re-Namer">
+    <meta property="og:description" content="Bulk-rename files with patterns, sequences and rules — built for eCommerce media workflows.">
+    <meta property="og:image" content="og-banner.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="IBI File Re-Namer — India Business International">
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="IBI File Re-Namer">
+    <meta name="twitter:description" content="Bulk-rename files with patterns, sequences and rules — built for eCommerce media workflows.">
+    <meta name="twitter:image" content="og-banner.png">
 
     <!-- Favicon: IBI text in cyan on black background, Roboto font -->
     <link rel="icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%23000000'/%3E%3Ctext x='50%25' y='50%25' font-family='Roboto, Arial, sans-serif' font-size='22' font-weight='900' fill='%2300c5ff' dominant-baseline='central' text-anchor='middle'%3EIBI%3C/text%3E%3C/svg%3E" type="image/svg+xml">
@@ -949,7 +963,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v3.40</span>
+        <span class="version-tag">v3.42</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1116,7 +1130,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.40</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.42</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1846,7 +1860,7 @@ function arrayBufferToBase64(buffer) {
  * still blocks reading the response, we retry in no-cors mode (fire-and-forget):
  * the file still uploads, we just can't read the confirmation.
  */
-async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict) {
+async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict, uploadId) {
     const gasUrl = getGasUrl();
     if (!gasUrl) throw new Error('GDrive URL not set — open ⚙ Settings.');
     if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec\b/.test(gasUrl)) {
@@ -1859,7 +1873,7 @@ async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict) {
     }
     // conflict: '' = check first (server reports if the name already exists),
     //           'overwrite' = replace it, 'rename' = save a numbered copy "name (2).pdf".
-    const payload   = JSON.stringify({ filename, pdfBase64, folderDate, conflict: conflict || '' });
+    const payload   = JSON.stringify({ filename, pdfBase64, folderDate, conflict: conflict || '', uploadId: uploadId || '' });
 
     let response;
     try {
@@ -1880,7 +1894,10 @@ async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict) {
                 // Can't read the reply in no-cors mode, so we can't run the overwrite/rename
                 // prompt: default to 'rename' so a duplicate still saves as a numbered copy
                 // (never silently dropped) unless the caller already chose an action.
-                body:    JSON.stringify({ filename, pdfBase64, folderDate, conflict: conflict || 'rename' })
+                // Same uploadId as the first attempt → the server dedupes it: if the
+                // first POST already saved the file, this retry returns that result
+                // instead of writing a second copy.
+                body:    JSON.stringify({ filename, pdfBase64, folderDate, conflict: conflict || 'rename', uploadId: uploadId || '' })
             });
             return { success: true, opaque: true };
         } catch (e2) {
@@ -1939,6 +1956,12 @@ driveBtn.addEventListener('click', async () => {
     // For Meesho (no pickup date in PDF), pickupDate.value stays at the Step-1 default
     // (today / user-selected), which becomes the folder date.
     const folderDate = inputDateToFolderDate(pickupDate.value || invoiceDate.value);
+    // One idempotency key for the whole click (initial send, the conflict resend,
+    // and any auto-retry below all share it). The server saves at most one file
+    // per uploadId, so a browser retry after a CORS read-failure can't double-save.
+    const uploadId = (self.crypto && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : 'u' + Date.now() + '-' + Math.random().toString(36).slice(2);
 
     driveBtn.disabled = true;
     driveBtn.innerHTML = '<span class="gemini-spin">⟳</span> Uploading…';
@@ -1949,7 +1972,7 @@ driveBtn.addEventListener('click', async () => {
         // ArrayBuffer (which PDF.js may have detached). This makes repeated uploads
         // (2nd, 3rd file in the same session) reliable.
         const freshBuffer = await state.file.arrayBuffer();
-        let result = await uploadToGDrive(freshBuffer, filename, folderDate);
+        let result = await uploadToGDrive(freshBuffer, filename, folderDate, '', uploadId);
 
         // Same-name file already in the folder → ask the user, then resend with their choice.
         if (result.conflict) {
@@ -1960,7 +1983,7 @@ driveBtn.addEventListener('click', async () => {
             }
             driveBtn.innerHTML = '<span class="gemini-spin">⟳</span> ' + (choice === 'overwrite' ? 'Overwriting…' : 'Saving copy…');
             setDriveStatus(`☁ ${choice === 'overwrite' ? 'Overwriting' : 'Saving a numbered copy'} → ${result.folder}…`, '');
-            result = await uploadToGDrive(freshBuffer, filename, folderDate, choice);
+            result = await uploadToGDrive(freshBuffer, filename, folderDate, choice, uploadId);
         }
 
         if (result.opaque) {

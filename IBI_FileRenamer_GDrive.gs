@@ -1,5 +1,5 @@
 /**
- * IBI File Re-Namer — Google Drive Upload Endpoint  (v5 — conflict prompt + 30-day retention)
+ * IBI File Re-Namer — Google Drive Upload Endpoint  (v6 — idempotent uploads)
  * Google Apps Script (GAS) Web App
  *
  * ══════════════════════════════════════════════════════════════════════
@@ -7,6 +7,13 @@
  *     Deploy ▸ Manage deployments ▸ (pencil ✏️) ▸ Version: New version ▸ Deploy
  *     Otherwise Google keeps running the OLD code.
  * ══════════════════════════════════════════════════════════════════════
+ *
+ *  WHAT'S NEW IN v6:
+ *   • IDEMPOTENT UPLOADS — fixes the intermittent "same PDF saved twice" bug.
+ *     The website now sends a unique uploadId per click; doPost saves at most one
+ *     file per id (recorded in CacheService for 10 min) and returns the original
+ *     result if the browser auto-retries the POST after a CORS read failure.
+ *     A LockService lock serializes the check+save so a retry can't race it.
  *
  *  WHAT'S NEW IN v4:
  *   • DUPLICATE PROMPT instead of silent replace. If a file with the EXACT same
@@ -51,62 +58,99 @@ function doPost(e) {
     const pdfBase64  = body.pdfBase64;
     const folderDate = String(body.folderDate || '').trim().replace(/\s+/g, ' ');
     const conflict   = String(body.conflict || '').trim().toLowerCase();  // '', 'overwrite', 'rename'
+    const uploadId   = String(body.uploadId || '').trim();                // idempotency key (per click)
 
     if (!filename)   throw new Error('Missing filename');
     if (!pdfBase64)  throw new Error('Missing PDF data');
     if (!folderDate) throw new Error('Missing folderDate');
 
-    const root       = DriveApp.getRootFolder();
-    const parent     = getOrCreateFolder(root, ROOT_FOLDER_NAME);
-    const dateFolder = getOrCreateFolder(parent, 'Orders ' + folderDate);
+    // ── IDEMPOTENCY (fixes the intermittent double-save) ──────────────────────
+    // A GAS /exec POST is NOT idempotent: every call reaching the save path below
+    // calls createFile(). The website follows the /exec → googleusercontent 302
+    // redirect; doPost (which saves the file) runs BEFORE that redirect. When the
+    // browser can't read the redirected cross-origin response (intermittent CORS),
+    // its fetch rejects even though the file WAS saved, and it auto-retries the
+    // POST — producing a duplicate "name (2).pdf". We record each committed
+    // uploadId briefly and short-circuit any repeat with the same id, so the retry
+    // returns the original result instead of writing a second file.
+    const cache    = CacheService.getScriptCache();
+    const cacheKey = uploadId ? ('idem_' + uploadId) : '';
 
-    // Existing files with the EXACT same name in this date folder.
-    const existing = [];
-    const dup = dateFolder.getFilesByName(filename);
-    while (dup.hasNext()) existing.push(dup.next());
+    // Serialize so a fast retry can't race the original request before it commits.
+    const lock = LockService.getScriptLock();
+    try { lock.waitLock(20000); } catch (le) { /* proceed unlocked rather than fail the upload */ }
 
-    // ── CHECK MODE: a same-name file exists and the caller hasn't chosen yet ──
-    if (existing.length > 0 && conflict !== 'overwrite' && conflict !== 'rename') {
-      return json({
-        success:       false,
-        conflict:      true,
-        filename:      filename,
-        folder:        'Orders ' + folderDate,
-        existingCount: existing.length,
-        existingUrl:   'https://drive.google.com/file/d/' + existing[0].getId() + '/view',
-        suggestedName: nextAvailableName(dateFolder, filename)
+    try {
+      if (cacheKey) {
+        const prior = cache.get(cacheKey);
+        if (prior) {
+          return ContentService.createTextOutput(prior).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+
+      const root       = DriveApp.getRootFolder();
+      const parent     = getOrCreateFolder(root, ROOT_FOLDER_NAME);
+      const dateFolder = getOrCreateFolder(parent, 'Orders ' + folderDate);
+
+      // Existing files with the EXACT same name in this date folder.
+      const existing = [];
+      const dup = dateFolder.getFilesByName(filename);
+      while (dup.hasNext()) existing.push(dup.next());
+
+      // ── CHECK MODE: a same-name file exists and the caller hasn't chosen yet ──
+      // No file is written here, so the uploadId is NOT recorded — the real save
+      // that follows the user's Overwrite/Rename choice must still go through.
+      if (existing.length > 0 && conflict !== 'overwrite' && conflict !== 'rename') {
+        return json({
+          success:       false,
+          conflict:      true,
+          filename:      filename,
+          folder:        'Orders ' + folderDate,
+          existingCount: existing.length,
+          existingUrl:   'https://drive.google.com/file/d/' + existing[0].getId() + '/view',
+          suggestedName: nextAvailableName(dateFolder, filename)
+        });
+      }
+
+      // ── Decide the name to save under ──
+      let saveName = filename;
+      let replaced = 0;
+      if (conflict === 'overwrite') {
+        for (let i = 0; i < existing.length; i++) { existing[i].setTrashed(true); replaced++; }
+      } else if (conflict === 'rename') {
+        saveName = nextAvailableName(dateFolder, filename);
+      }
+      // (no existing file, or conflict already resolved → just save as saveName)
+
+      // ── Save the file ──
+      const blob = Utilities.newBlob(Utilities.base64Decode(pdfBase64), MimeType.PDF, saveName);
+      const file = dateFolder.createFile(blob);
+
+      // ── RETENTION: delete order folders older than KEEP_DAYS (rolling window) ──
+      const purgedFolders = purgeOldFolders(parent, KEEP_DAYS);
+
+      const out = JSON.stringify({
+        success:    true,
+        filename:   saveName,
+        requested:  filename,
+        renamed:    (saveName !== filename),
+        replaced:   replaced,
+        folder:     'Orders ' + folderDate,
+        purged:     purgedFolders,
+        fileId:     file.getId(),
+        fileUrl:    'https://drive.google.com/file/d/' + file.getId() + '/view',
+        folderUrl:  'https://drive.google.com/drive/folders/' + dateFolder.getId()
       });
+
+      // Record ONLY after a file was actually created, so a retry dedupes but a
+      // conflict-check (which writes nothing) still lets the real save through.
+      if (cacheKey) cache.put(cacheKey, out, 600);  // 10-minute retry window
+
+      return ContentService.createTextOutput(out).setMimeType(ContentService.MimeType.JSON);
+
+    } finally {
+      try { lock.releaseLock(); } catch (e2) {}
     }
-
-    // ── Decide the name to save under ──
-    let saveName = filename;
-    let replaced = 0;
-    if (conflict === 'overwrite') {
-      for (let i = 0; i < existing.length; i++) { existing[i].setTrashed(true); replaced++; }
-    } else if (conflict === 'rename') {
-      saveName = nextAvailableName(dateFolder, filename);
-    }
-    // (no existing file, or conflict already resolved → just save as saveName)
-
-    // ── Save the file ──
-    const blob = Utilities.newBlob(Utilities.base64Decode(pdfBase64), MimeType.PDF, saveName);
-    const file = dateFolder.createFile(blob);
-
-    // ── RETENTION: delete order folders older than KEEP_DAYS (rolling window) ──
-    const purgedFolders = purgeOldFolders(parent, KEEP_DAYS);
-
-    return json({
-      success:    true,
-      filename:   saveName,
-      requested:  filename,
-      renamed:    (saveName !== filename),
-      replaced:   replaced,
-      folder:     'Orders ' + folderDate,
-      purged:     purgedFolders,
-      fileId:     file.getId(),
-      fileUrl:    'https://drive.google.com/file/d/' + file.getId() + '/view',
-      folderUrl:  'https://drive.google.com/drive/folders/' + dateFolder.getId()
-    });
 
   } catch (err) {
     return json({ success: false, error: err.toString() });
@@ -114,7 +158,7 @@ function doPost(e) {
 }
 
 function doGet() {
-  return json({ status: 'active', rootFolder: ROOT_FOLDER_NAME, keepDays: KEEP_DAYS, version: 4, conflictPrompt: true });
+  return json({ status: 'active', rootFolder: ROOT_FOLDER_NAME, keepDays: KEEP_DAYS, version: 6, conflictPrompt: true, idempotent: true });
 }
 
 /**
