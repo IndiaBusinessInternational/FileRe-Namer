@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.4</title>
+    <title>IBI File Re-Namer v4.5</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.4">v4.4</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.5">v4.5</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.4</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.5</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -3511,15 +3511,21 @@ function detectOrderCount(text) {
         }
     }
 
-    // Meesho manifest: count rows by "Free Size" tokens — every Meesho manifest row
-    // ends with "Free Size", and this is more robust than counting AWBs (which can
-    // be split or merged across PDF.js text extraction).
-    // Count only within the shipment table: the manifest's first page is a Picklist
-    // that carries its own "Free Size" per SKU, which inflates the count by the number
-    // of distinct SKUs (5 orders across 2 SKUs read as 7). If the table header isn't
+    // Meesho manifest: the order count is the number of rows in the SHIPMENT TABLE.
+    // Everything before that table is the Picklist — a per-SKU summary whose rows are
+    // not orders, so counting across the whole document yields orders + distinct SKUs
+    // (5 orders across 2 SKUs read as 7). Slice from the table header; if it isn't
     // found, fall back to the whole document rather than losing the count entirely.
     const tableHdr    = t.match(/S\.?\s*No\.?\s+Sub\s+Order\s+No\.?/i);
     const shipmentTbl = tableHdr ? t.slice(tableHdr.index + tableHdr[0].length) : t;
+
+    // One Sub Order No. per row, always carrying an "_<n>" suffix (…3492993_1). This
+    // beats counting the Size column: "Free Size" only tracks rows while every product
+    // is free-size, and a sized product would go uncounted. Kept as the fallback below
+    // in case PDF.js splits the suffix off its digits.
+    const subOrders = (shipmentTbl.match(/\d+_\d+\b/g) || []).length;
+    if (subOrders > 0 && subOrders < 1000) return subOrders;
+
     const freeSizeCount = (shipmentTbl.match(/\bfree\s+size\b/gi) || []).length;
     if (freeSizeCount > 0 && freeSizeCount < 1000) return freeSizeCount;
 
