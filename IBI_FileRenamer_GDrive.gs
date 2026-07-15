@@ -83,11 +83,19 @@
  *    IBI Daily Orders / Orders 1 June 2026 / <renamed file>.pdf
  *
  *  REQUEST BODY (JSON):
- *    save:    { filename, pdfBase64, folderDate, conflict, uploadId, baseName, orderNo, customer }
- *    lookup:  { type:'ordinal', baseName, folderDate, orderNo }
- *    conflict: ""          → check first; if this same order is already there, reply {conflict:true}
+ *    save:    { filename, pdfBase64, folderDate, conflict, uploadId,
+ *               baseName, orderNo, fileHash, customer }
+ *    lookup:  { type:'ordinal', baseName, folderDate, orderNo, fileHash }   ← read-only
+ *    conflict: ""          → check first; reply {conflict:true} if this same order is
+ *                            already here, or is already filed under another date
  *              "overwrite" → trash the existing copy of this order, then save
  *              "rename"    → keep both: save under the next free order number
+ *                            (also means "yes, save it again" for a cross-date duplicate)
+ *
+ *  LOOKUP REPLY: { ordinal, sameOrder, sameName, identical, unknown, elsewhere[], folder }
+ *    elsewhere[] = [{name, folder, url, exact}] — this order is already saved under
+ *    ANOTHER date's folder. `exact:false` means it was matched on the order number
+ *    printed inside the PDF rather than a stamp, so it is likely but not certain.
  */
 
 // ─── CONFIG ────────────────────────────────────────────────────
