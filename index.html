@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.0</title>
+    <title>IBI File Re-Namer v4.1</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1053,7 +1053,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v4.0</span>
+        <span class="version-tag">v4.1</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1250,7 +1250,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.0</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.1</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -2324,7 +2324,7 @@ function askConflict(info) {
                 `${a.url ? ` · <a href="${a.url}" target="_blank">open</a>` : ''}</li>`).join('');
             $('conflictMsg').innerHTML =
                 `Order <strong>${escapeHtml(info.orderNo || '')}</strong> has already been saved ` +
-                `on a different date:<ul style="margin:8px 0 0 18px;line-height:1.6;">${list}</ul>` +
+                `already:<ul style="margin:8px 0 0 18px;line-height:1.6;">${list}</ul>` +
                 `<br>Saving it again would put a second copy under <strong>${escapeHtml(info.folder || '')}</strong>.`;
             $('conflictRenameHint').textContent = 'Save a second copy under today anyway';
             return armConflictButtons();
@@ -3983,9 +3983,9 @@ function renderOrdinalNote() {
             const list = (state.elsewhere || []).map(a =>
                 '<li>📁 <strong>' + escapeHtml(a.folder) + '</strong> — ' + escapeHtml(a.name) +
                 (a.url ? ' · <a href="' + a.url + '" target="_blank">open</a>' : '') + '</li>').join('');
-            msg = '🚫 <strong>Already processed on another date.</strong> This order is in:' +
+            msg = '🚫 <strong>This order is already saved.</strong> Found in:' +
                   '<ul style="margin:5px 0 0 16px;">' + list + '</ul>' +
-                  'Sending it again would file a second copy under today.' +
+                  'Sending it again would file a second copy.' +
                   (whoTxt ? '<br>' + whoTxt : '');
             color = '#ef4444'; break;
         }
@@ -4264,7 +4264,7 @@ async function fetchBatchOrdinals() {
             if (r && r.elsewhere && r.elsewhere.length) {
                 it.elsewhere = r.elsewhere;
                 it.status = 'duplicate';
-                it.note = '🚫 <strong>Already processed on ' +
+                it.note = '🚫 <strong>Already saved in ' +
                           r.elsewhere.map(a => escapeHtml(a.folder)).join(', ') + '</strong> as ' +
                           r.elsewhere.map(a => escapeHtml(a.name) + (a.url ? ' · <a href="' + a.url + '" target="_blank">open</a>' : '')).join('; ') +
                           '. Left out of the send — tick "Send anyway" to file a second copy.';
@@ -4409,7 +4409,7 @@ function renderBatch() {
 
     const dupes = batch.items.filter(i => i.status === 'duplicate' && !i.force).length;
     batchDupeWarn.innerHTML = dupes
-        ? `🚫 <strong>${dupes} order${dupes === 1 ? '' : 's'} already processed on an earlier date</strong> ` +
+        ? `🚫 <strong>${dupes} order${dupes === 1 ? '' : 's'} already saved in Drive</strong> ` +
           `and will be left out, so you don't ship a duplicate. Tick "Send anyway" on any you really want filed again.`
         : '';
     batchDupeWarn.style.display = dupes ? 'block' : 'none';
@@ -4580,7 +4580,7 @@ batchDriveBtn.addEventListener('click', async () => {
     const parts = [];
     if (done)       parts.push(`saved ${done}`);
     if (skipped)    parts.push(`skipped ${skipped} already-saved`);
-    if (dupesLeft)  parts.push(`left out ${dupesLeft} already processed on an earlier date`);
+    if (dupesLeft)  parts.push(`left out ${dupesLeft} already saved in Drive`);
     if (failed)     parts.push(`${failed} failed`);
     setBatchStatus((failed ? '⚠ ' : '✓ ') + 'Batch finished — ' + (parts.join(' · ') || 'nothing to do') + '.',
                    failed ? 'error' : 'success');

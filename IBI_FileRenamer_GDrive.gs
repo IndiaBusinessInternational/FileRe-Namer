@@ -1,5 +1,5 @@
 /**
- * IBI File Re-Namer — Google Drive Upload Endpoint  (v9 — cross-folder duplicate check)
+ * IBI File Re-Namer — Google Drive Upload Endpoint  (v10 — duplicate check covers renamed products)
  * Google Apps Script (GAS) Web App
  *
  * ══════════════════════════════════════════════════════════════════════
@@ -7,6 +7,17 @@
  *     Deploy ▸ Manage deployments ▸ (pencil ✏️) ▸ Version: New version ▸ Deploy
  *     Otherwise Google keeps running the OLD code.
  * ══════════════════════════════════════════════════════════════════════
+ *
+ *  WHAT'S NEW IN v10:
+ *   • The duplicate check now also catches the same order saved TODAY under a DIFFERENT
+ *     PRODUCT NAME. v9 skipped today's folder entirely, trusting scanOrders to cover it
+ *     — but scanOrders only ever inspects files matching THIS product's base name. So
+ *     correcting a product name (Meesho's SKU is sometimes plain wrong) gave the file a
+ *     different base, which nothing then checked, and the order duplicated silently.
+ *     Found in the wild: one order sitting in Orders 15 July 2026 twice, once as
+ *     "Coconut Coir Brush" and once as "Chappal Stitching Awl".
+ *     findElsewhere() now skips only the files scanOrders genuinely owns (same folder
+ *     AND same base name) instead of the whole folder.
  *
  *  WHAT'S NEW IN v9:
  *   • CROSS-FOLDER DUPLICATE CHECK. Everything before this only ever looked inside the
@@ -188,11 +199,11 @@ function doPost(e) {
           return ContentService.createTextOutput(out0).setMimeType(ContentService.MimeType.JSON);
         }
 
-        // Already filed under a DIFFERENT day → stop and say where, rather than quietly
-        // filing a second copy under today. 'rename' means the user saw this and chose
-        // to keep both anyway.
+        // Already filed elsewhere — another day, or today under a different product
+        // name → stop and say where, rather than quietly filing a second copy.
+        // 'rename' means the user saw this and chose to keep both anyway.
         if (conflict !== 'overwrite' && conflict !== 'rename') {
-          const away = findElsewhere(orderNo, 'Orders ' + folderDate);
+          const away = findElsewhere(orderNo, 'Orders ' + folderDate, baseName);
           if (away.length > 0 && scan.matches.length === 0) {
             return json({
               success:      false,
@@ -333,7 +344,7 @@ function doPost(e) {
 function doGet() {
   return json({
     status: 'active', rootFolder: ROOT_FOLDER_NAME, keepDays: KEEP_DAYS,
-    version: 9, conflictPrompt: true, idempotent: true, orderNumbering: true, hashIdentity: true, crossFolderDuplicateCheck: true
+    version: 10, conflictPrompt: true, idempotent: true, orderNumbering: true, hashIdentity: true, crossFolderDuplicateCheck: true
   });
 }
 
@@ -357,7 +368,7 @@ function handleOrdinalLookup(body) {
 
   // Was this order already filed under a DIFFERENT day? Checked even when today's
   // folder doesn't exist yet — that is exactly the case where a duplicate slips in.
-  const elsewhere = findElsewhere(orderNo, 'Orders ' + folderDate);
+  const elsewhere = findElsewhere(orderNo, 'Orders ' + folderDate, baseName);
 
   const dateFolder = getFolderOrNull(parent, 'Orders ' + folderDate);
   if (!dateFolder) {
@@ -396,12 +407,21 @@ function handleOrdinalLookup(body) {
  * Read-only. Returns [] rather than throwing — a duplicate warning is a help, and must
  * never be able to fail an upload.
  */
-function findElsewhere(orderNo, excludeFolder) {
+function findElsewhere(orderNo, targetFolder, baseName) {
   const out = [];
   if (!orderNo) return out;
   try {
     const root = getFolderOrNull(DriveApp.getRootFolder(), ROOT_FOLDER_NAME);
     if (!root) return out;
+
+    // scanOrders() already covers today's folder — but ONLY files whose name matches
+    // this product's base name. So today's folder is not skipped wholesale here; only
+    // the files scanOrders owns are. That difference matters: correct a product name
+    // (Meesho's SKU is sometimes wrong) and the same order saved under the corrected
+    // name has a different base, so nothing was checking it and it duplicated silently.
+    const owned = baseName ? new RegExp(
+      '^' + escapeRegex(baseName) + '(?:\\s+\\d+(?:st|nd|rd|th)\\s+Order)?(?:\\s+\\(\\d+\\))?\\.pdf$', 'i'
+    ) : null;
 
     // Quote the whole order number so it's matched as one phrase. Deliberately NOT
     // falling back to the number without its "_1" sub-order suffix: that would match
@@ -414,8 +434,8 @@ function findElsewhere(orderNo, excludeFolder) {
     while (it.hasNext() && guard++ < 40) {
       const f = it.next();
       const folderName = locateInOrders(f, root);
-      if (!folderName) continue;                 // outside IBI Daily Orders — not ours
-      if (folderName === excludeFolder) continue; // today's folder is scanned precisely elsewhere
+      if (!folderName) continue;                                        // outside IBI Daily Orders — not ours
+      if (folderName === targetFolder && owned && owned.test(f.getName())) continue;  // scanOrders' territory
 
       // Prefer a stamped order number: it's exact. An unstamped hit is reported too
       // (Drive found this order number inside the PDF), just flagged as less certain.
