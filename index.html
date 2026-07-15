@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v3.43</title>
+    <title>IBI File Re-Namer v3.5</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -965,7 +965,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v3.43</span>
+        <span class="version-tag">v3.5</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1110,6 +1110,7 @@
             <div class="filename-preview" id="filenamePreview" style="display: none;">
                 <span class="label">NEW FILENAME</span>
                 <span id="previewText">—</span>
+                <div id="ordinalNote" style="display:none;margin-top:9px;font-size:11px;line-height:1.5;font-family:var(--font-sans);text-align:left;"></div>
             </div>
 
             <!-- Action Buttons -->
@@ -1132,7 +1133,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.43</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.5</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1271,7 +1272,10 @@ const state = {
     docType: 'invoice',    // 'invoice' or 'manifest'
     isMultiOrder: false,   // true when PDF has 2+ invoice pages (e.g. Sub_Order_Labels)
     multiOrders: [],       // [{product, qty}, ...] when isMultiOrder
-    detected: {}
+    detected: {},
+    order: null,           // {orderNo, customer} — identity of THIS order (see extractOrderIdentity)
+    ordinal: 1,            // 1 = first order of its kind today; 2+ appends "2nd Order" to the filename
+    ordinalState: 'idle'   // 'idle' | 'checking' | 'ok' | 'offline' | 'nokey'
 };
 
 // ----- DOM refs -----
@@ -1305,6 +1309,7 @@ const invoiceFields = $('invoiceFields');
 const manifestFields = $('manifestFields');
 const filenamePreview = $('filenamePreview');
 const previewText = $('previewText');
+const ordinalNote = $('ordinalNote');
 const downloadBtn = $('downloadBtn');
 const driveBtn    = $('driveBtn');
 const clearBtn    = $('clearBtn');
@@ -1875,7 +1880,16 @@ async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict, uploadI
     }
     // conflict: '' = check first (server reports if the name already exists),
     //           'overwrite' = replace it, 'rename' = save a numbered copy "name (2).pdf".
-    const payload   = JSON.stringify({ filename, pdfBase64, folderDate, conflict: conflict || '', uploadId: uploadId || '' });
+    // orderNo/customer let the server number same-day repeats of the same product
+    // ("2nd Order") and recognise a re-upload of an order it already holds.
+    const payload   = JSON.stringify({
+        filename, pdfBase64, folderDate,
+        conflict: conflict || '',
+        uploadId: uploadId || '',
+        baseName: buildBaseName(),
+        orderNo:  (state.order && state.order.orderNo)   || '',
+        customer: (state.order && state.order.customer)  || ''
+    });
 
     let response;
     try {
@@ -1899,7 +1913,14 @@ async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict, uploadI
                 // Same uploadId as the first attempt → the server dedupes it: if the
                 // first POST already saved the file, this retry returns that result
                 // instead of writing a second copy.
-                body:    JSON.stringify({ filename, pdfBase64, folderDate, conflict: conflict || 'rename', uploadId: uploadId || '' })
+                body:    JSON.stringify({
+                    filename, pdfBase64, folderDate,
+                    conflict: conflict || 'rename',
+                    uploadId: uploadId || '',
+                    baseName: buildBaseName(),
+                    orderNo:  (state.order && state.order.orderNo)  || '',
+                    customer: (state.order && state.order.customer) || ''
+                })
             });
             return { success: true, opaque: true };
         } catch (e2) {
@@ -1935,6 +1956,75 @@ async function testGasConnection(url) {
         // GET may also be CORS-blocked even when POST works; treat as inconclusive
         return { ok: null, msg: 'Could not read response (CORS). Upload may still work — try sending a file.' };
     }
+}
+
+/**
+ * Ask the Apps Script how many DIFFERENT orders for this same product/day are already
+ * in the Drive folder, and what number this one should get. Runs as soon as the PDF is
+ * parsed (not just on upload) so the Download button and the live preview show the same
+ * "2nd Order" name the Drive copy will get.
+ *
+ * The server is the source of truth: the count lives in the Drive folder, so it stays
+ * correct across this PC, the phone, and any other device.
+ */
+async function fetchOrdinal() {
+    const seq = ++ordinalSeq;   // stale-response guard: only the newest request may apply
+
+    if (state.docType === 'manifest' || !state.file) {
+        state.ordinal = 1; state.ordinalState = 'idle';
+        return;
+    }
+    if (!state.order || !state.order.orderNo) {
+        // Without an order number two labels are indistinguishable — numbering them
+        // would be a guess, so leave the name alone and say why.
+        state.ordinal = 1; state.ordinalState = 'nokey';
+        updatePreview();
+        return;
+    }
+    const gasUrl = getGasUrl();
+    if (!gasUrl) { state.ordinal = 1; state.ordinalState = 'idle'; updatePreview(); return; }
+
+    state.ordinalState = 'checking';
+    updatePreview();
+
+    try {
+        const res = await fetch(gasUrl, {
+            method:  'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body:    JSON.stringify({
+                type:       'ordinal',
+                baseName:   buildBaseName(),
+                folderDate: inputDateToFolderDate(pickupDate.value || invoiceDate.value),
+                orderNo:    state.order.orderNo
+            }),
+            redirect: 'follow'
+        });
+        const txt = (await res.text()).trim();
+        if (txt.startsWith('<')) throw new Error('GAS returned HTML');
+        const data = JSON.parse(txt);
+        if (seq !== ordinalSeq) return;                 // a newer lookup already ran
+        if (!data.success) throw new Error(data.error || 'lookup failed');
+
+        state.ordinal = parseInt(data.ordinal, 10) || 1;
+        state.ordinalState = 'ok';
+    } catch (err) {
+        if (seq !== ordinalSeq) return;
+        // An older GAS deployment (no 'ordinal' action) lands here too — degrade to
+        // un-numbered rather than guessing a number that could overwrite a real order.
+        console.warn('Ordinal lookup failed:', err);
+        state.ordinal = 1;
+        state.ordinalState = 'offline';
+    }
+    updatePreview();
+}
+let ordinalSeq = 0;
+
+// The base name feeds the lookup, so re-check when the user edits any field that
+// changes it (product, platform, qty, dates). Debounced — these are keystroke events.
+let ordinalTimer = null;
+function scheduleOrdinalCheck() {
+    clearTimeout(ordinalTimer);
+    ordinalTimer = setTimeout(fetchOrdinal, 600);
 }
 
 // ── GDrive button handler ──
@@ -1998,13 +2088,22 @@ driveBtn.addEventListener('click', async () => {
                 'error'
             );
         } else {
+            // The server re-counts the folder at save time and is authoritative — if it
+            // assigned a different number (another device saved an order since our
+            // lookup), adopt it so the preview matches what's actually in Drive.
+            if (result.ordinal) {
+                state.ordinal = parseInt(result.ordinal, 10) || state.ordinal;
+                state.ordinalState = 'ok';
+                updatePreview();
+            }
             const fileLink   = result.fileUrl   ? `<a href="${result.fileUrl}"   target="_blank">Open file</a>`   : '';
             const folderLink = result.folderUrl ? `<a href="${result.folderUrl}" target="_blank">Open folder</a>` : '';
             const dupNote    = (result.replaced > 0) ? ` (replaced ${result.replaced} old cop${result.replaced === 1 ? 'y' : 'ies'})` : '';
+            const ordNote    = (result.ordinal >= 2) ? ` · numbered <strong>${ordinalWord(result.ordinal)} Order</strong> (same product already shipped today)` : '';
             const renameNote = result.renamed ? ` · saved as <strong>${result.filename}</strong> to keep both` : '';
             const purgeNote  = (result.purged > 0) ? ` · 🧹 cleaned ${result.purged} folder${result.purged === 1 ? '' : 's'} older than 30 days` : '';
             setDriveStatus(
-                `✓ Saved to <strong>IBI Daily Orders / ${result.folder}</strong>${dupNote}${renameNote}${purgeNote}${fileLink ? ' · ' + fileLink : ''}${folderLink ? ' · ' + folderLink : ''}`,
+                `✓ Saved to <strong>IBI Daily Orders / ${result.folder}</strong>${dupNote}${ordNote}${renameNote}${purgeNote}${fileLink ? ' · ' + fileLink : ''}${folderLink ? ' · ' + folderLink : ''}`,
                 'success'
             );
         }
@@ -2026,10 +2125,19 @@ function setDriveStatus(html, type) {
 function askConflict(info) {
     return new Promise(resolve => {
         const overlay = $('conflictOverlay');
-        $('conflictMsg').innerHTML =
-            `<strong>${info.filename}</strong> already exists in <strong>${info.folder}</strong>` +
-            (info.existingCount > 1 ? ` (${info.existingCount} copies)` : '') + '.';
-        $('conflictRenameHint').textContent = info.suggestedName ? ('Save as: ' + info.suggestedName) : 'Save as a numbered copy';
+        // sameOrder = the server matched this PDF's order number to a file already in
+        // the folder, so this is a re-upload of the SAME order, not a new one. Say so —
+        // "the filename exists" would be misleading when a different order just gets
+        // the next number automatically and never prompts at all.
+        $('conflictMsg').innerHTML = info.sameOrder
+            ? `Order <strong>${escapeHtml(info.orderNo || '')}</strong> is already saved in ` +
+              `<strong>${info.folder}</strong> as <strong>${escapeHtml(info.filename)}</strong>` +
+              (info.existingCount > 1 ? ` (${info.existingCount} copies)` : '') + '.'
+            : `<strong>${info.filename}</strong> already exists in <strong>${info.folder}</strong>` +
+              (info.existingCount > 1 ? ` (${info.existingCount} copies)` : '') + '.';
+        $('conflictRenameHint').textContent = info.suggestedName
+            ? ('Save as: ' + info.suggestedName)
+            : 'Save as a numbered copy';
         const ow = $('conflictOverwriteBtn'), rn = $('conflictRenameBtn'), cn = $('conflictCancelBtn');
         const done = (val) => {
             overlay.classList.remove('open');
@@ -3231,6 +3339,13 @@ async function processFile(file) {
             }
         }
 
+        // Who this order belongs to — drives the same-day "2nd Order" numbering.
+        state.order = (detectedType === 'manifest')
+            ? null
+            : extractOrderIdentity(text, pageTexts, state.isMultiOrder);
+        state.ordinal = 1;
+        state.ordinalState = 'idle';
+
         state.detected = {
             platform: detectedPlatform,
             docType: detectedType,
@@ -3238,7 +3353,9 @@ async function processFile(file) {
             pickup: detectedPickup,
             product: detectedProduct,
             quantity: detectedQty,
-            orders: detectedOrders
+            orders: detectedOrders,
+            orderNo: state.order ? state.order.orderNo : '',
+            customer: state.order ? state.order.customer : ''
         };
 
         // Populate UI
@@ -3397,6 +3514,11 @@ async function processFile(file) {
         showStatus('✓ PDF parsed. Review the detected fields below and click Download.', 'success');
         updatePreview();
 
+        // Ask Drive whether this product already shipped today → "2nd Order" suffix.
+        // Deliberately not awaited: the form is usable immediately and the preview
+        // updates when the answer lands.
+        fetchOrdinal();
+
     } catch (err) {
         console.error('PDF parse error:', err);
         showStatus('Could not parse PDF. You can still set the fields manually and download.', 'warn');
@@ -3437,13 +3559,100 @@ function setDocType(type) {
 typeInvoice.addEventListener('click', () => setDocType('invoice'));
 typeManifest.addEventListener('click', () => setDocType('manifest'));
 
+// =================== ORDER IDENTITY ===================
+// Two labels for the same product on the same day are only a "2nd Order" if they are
+// genuinely different orders. The order number is the identity — it is unique per order
+// and survives re-uploading the same PDF, so re-processing a file keeps its number
+// instead of pushing it to "3rd Order". The customer name is shown to the user as a
+// human-readable confirmation but is NOT the key (one customer can order twice a day).
+
+// Ordered most-specific-first: a platform-shaped ID beats the generic "Order No." label.
+const ORDER_NO_PATTERNS = [
+    /\b(\d{15,22}_\d{1,3})\b/,                                        // Meesho sub-order: 308660728311978368_1
+    /\bpurchase\s+order\s+no\.?\s*[:\-]?\s*(\d{10,22})\b/i,           // Meesho tax invoice
+    /\b(OD\d{15,25})\b/i,                                             // Flipkart / Shopsy
+    /\b(\d{3}-\d{7}-\d{7})\b/,                                        // Amazon
+    /\border\s+(?:no\.?|number|id)\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-\/]{5,30})\b/i,  // generic labelled
+    /\binvoice\s+no\.?\s*[:\-]?\s*([A-Za-z0-9][\w\-\/]{4,30})\b/i     // last resort: invoice number
+];
+
+// Meesho's label linearizes the Product Details table as
+//   "SKU Size Qty Color Order No." → "Coconut Coir Brush 1 Qty." → … → "3086…_1"
+// so the text right after the "Order No." header is the PRODUCT, not the number.
+// Any candidate must therefore look like an ID: it needs a digit and can't be prose.
+function looksLikeOrderNo(v) {
+    if (!v) return false;
+    const s = String(v).trim();
+    if (s.length < 5 || s.length > 40) return false;
+    if (!/\d/.test(s)) return false;                  // must contain a digit
+    if (/^\d{1,4}$/.test(s)) return false;            // a bare small number is a qty/size, not an ID
+    if (/\s/.test(s)) return false;                   // IDs never contain spaces
+    return true;
+}
+
+function extractOrderNo(text) {
+    const t = String(text || '');
+    for (const re of ORDER_NO_PATTERNS) {
+        const m = t.match(re);
+        if (m && m[1] && looksLikeOrderNo(m[1])) return m[1].trim();
+    }
+    return '';
+}
+
+// Customer name — display only. Read from the raw (newline-bearing) text because every
+// platform puts the name on its own line directly under an address heading.
+const CUSTOMER_PATTERNS = [
+    /\bcustomer\s+address\s*[\r\n]+\s*([^\r\n]{2,60})/i,              // Meesho label
+    /\bbill\s+to\s*\/\s*ship\s+to\s*[\r\n]+\s*([^\r\n]{2,60})/i,      // Meesho invoice
+    /\bship\s+to\s*:?\s*[\r\n]+\s*([^\r\n]{2,60})/i,                  // Amazon / Flipkart
+    /\bdeliver\s+to\s*:?\s*[\r\n]+\s*([^\r\n]{2,60})/i                // Shopsy
+];
+
+function extractCustomerName(text) {
+    for (const re of CUSTOMER_PATTERNS) {
+        const m = String(text || '').match(re);
+        if (!m || !m[1]) continue;
+        // "Karthik Kaumar - 17-73/1, punachanadra rao shop" → "Karthik Kaumar"
+        let name = m[1].split(/\s+[-–]\s+|,/)[0].trim();
+        name = name.replace(/[^A-Za-z.\s'\-]/g, '').replace(/\s+/g, ' ').trim();
+        if (name.length >= 2 && /[A-Za-z]{2}/.test(name)) return name;
+    }
+    return '';
+}
+
+function extractOrderIdentity(text, pageTexts, isMulti) {
+    // A multi-order batch is identified by the set of order numbers it contains, so
+    // re-uploading the same batch matches itself and two different batches don't collide.
+    if (isMulti && pageTexts && pageTexts.length) {
+        const nos = pageTexts.map(p => extractOrderNo(p)).filter(Boolean);
+        const uniq = [...new Set(nos)];
+        if (uniq.length) return { orderNo: uniq.join('+').slice(0, 180), customer: '' };
+    }
+    return { orderNo: extractOrderNo(text), customer: extractCustomerName(text) };
+}
+
+// 1 → "1st", 2 → "2nd", 3 → "3rd", 4 → "4th", 11-13 → "11th/12th/13th", 21 → "21st"
+function ordinalWord(n) {
+    const num = parseInt(n, 10) || 1;
+    const rem100 = num % 100;
+    if (rem100 >= 11 && rem100 <= 13) return num + 'th';
+    switch (num % 10) {
+        case 1:  return num + 'st';
+        case 2:  return num + 'nd';
+        case 3:  return num + 'rd';
+        default: return num + 'th';
+    }
+}
+
 // =================== FILENAME BUILD ===================
 function sanitizeFileName(name) {
     // Remove characters that are invalid in filenames on Windows/Mac/Linux
     return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '').trim();
 }
 
-function buildFileName() {
+// The filename WITHOUT the "2nd Order" suffix and without ".pdf". This is the key the
+// Drive lookup groups by: same base name in the same day-folder = same product, same day.
+function buildBaseName() {
     const plat = platform.value || 'Platform';
     const invDateLong = formatDateLong(invoiceDate.value);
     const pickShort = formatDateShort(pickupDate.value);
@@ -3473,19 +3682,74 @@ function buildFileName() {
         name = plat + ' ' + prod + ' ' + qty + ' Qty ' + invDateLong + ' D ' + pickShort;
     }
 
-    name = sanitizeFileName(name);
-    return name + '.pdf';
+    return sanitizeFileName(name);
+}
+
+function buildFileName() {
+    const base = buildBaseName();
+    // A manifest isn't an order, so it never gets an ordinal.
+    const ord = (state.docType === 'manifest') ? 1 : (state.ordinal || 1);
+    const suffix = (ord >= 2) ? ' ' + ordinalWord(ord) + ' Order' : '';
+    return base + suffix + '.pdf';
 }
 
 function updatePreview() {
-    const name = buildFileName();
-    previewText.textContent = name;
+    previewText.textContent = buildFileName();
+    renderOrdinalNote();
+}
+
+// Explains the ordinal under the filename preview, so a "2nd Order" suffix is never a
+// surprise — the user can see which order number and customer triggered it.
+function renderOrdinalNote() {
+    if (state.docType === 'manifest' || !state.file) {
+        ordinalNote.style.display = 'none';
+        return;
+    }
+    const who = [];
+    if (state.order && state.order.orderNo)   who.push('Order <strong>' + escapeHtml(state.order.orderNo) + '</strong>');
+    if (state.order && state.order.customer)  who.push(escapeHtml(state.order.customer));
+    const whoTxt = who.length ? who.join(' · ') : '';
+
+    let msg, color;
+    switch (state.ordinalState) {
+        case 'checking':
+            msg = '⟳ Checking Drive for earlier orders of this product today…'; color = 'var(--text-muted)'; break;
+        case 'ok':
+            msg = (state.ordinal >= 2)
+                ? '🔢 <strong>' + ordinalWord(state.ordinal) + ' order</strong> for this product today — ' +
+                  (state.ordinal - 1) + ' earlier ' + (state.ordinal - 1 === 1 ? 'order is' : 'orders are') +
+                  ' already in the Drive folder.' + (whoTxt ? '<br>' + whoTxt : '')
+                : '✓ First order for this product today.' + (whoTxt ? '<br>' + whoTxt : '');
+            color = (state.ordinal >= 2) ? '#f59e0b' : 'var(--text-muted)'; break;
+        case 'nokey':
+            msg = '⚠ No order number found in this PDF — can\'t tell it apart from another order, so it won\'t be auto-numbered.';
+            color = '#f59e0b'; break;
+        case 'offline':
+            msg = '⚠ Couldn\'t reach Google Drive to check for earlier orders — filename not auto-numbered.' + (whoTxt ? '<br>' + whoTxt : '');
+            color = '#f59e0b'; break;
+        default:
+            ordinalNote.style.display = 'none'; return;
+    }
+    ordinalNote.innerHTML = msg;
+    ordinalNote.style.color = color;
+    ordinalNote.style.display = 'block';
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
 // Bind preview updates to all inputs
 ['change', 'input'].forEach(evt => {
     [platform, productName, quantity, orderCount, invoiceDate, pickupDate, pickupDateEdit]
         .forEach(el => el.addEventListener(evt, updatePreview));
+});
+
+// Editing any of these changes the base name, so the Drive count must be re-checked
+// against the NEW name (e.g. correcting the product re-groups it with a different set).
+['change', 'input'].forEach(evt => {
+    [platform, productName, quantity, invoiceDate, pickupDate, pickupDateEdit]
+        .forEach(el => el.addEventListener(evt, scheduleOrdinalCheck));
 });
 
 // Keep the two pickup-date fields (Step 1 default + Step 4 editable) in sync.
@@ -3580,6 +3844,12 @@ clearBtn.addEventListener('click', () => {
     state.fileBuffer = null;
     state.fullText = '';
     state.detected = {};
+    state.order = null;
+    state.ordinal = 1;
+    state.ordinalState = 'idle';
+    ordinalSeq++;                        // cancel any in-flight ordinal lookup
+    clearTimeout(ordinalTimer);
+    ordinalNote.style.display = 'none';
 
     fileInput.value = '';
     productName.value = '';
