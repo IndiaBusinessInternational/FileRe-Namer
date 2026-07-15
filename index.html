@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v3.5</title>
+    <title>IBI File Re-Namer v3.6</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -965,7 +965,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v3.5</span>
+        <span class="version-tag">v3.6</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1133,7 +1133,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.5</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.6</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1274,8 +1274,10 @@ const state = {
     multiOrders: [],       // [{product, qty}, ...] when isMultiOrder
     detected: {},
     order: null,           // {orderNo, customer} — identity of THIS order (see extractOrderIdentity)
+    fileHash: '',          // SHA-256 of the PDF bytes — the other half of the identity
     ordinal: 1,            // 1 = first order of its kind today; 2+ appends "2nd Order" to the filename
-    ordinalState: 'idle'   // 'idle' | 'checking' | 'ok' | 'offline' | 'nokey'
+    ordinalState: 'idle',  // 'idle' | 'checking' | 'ok' | 'same' | 'offline' | 'nokey'
+    sameAs: ''             // filename this order is already saved under, when ordinalState==='same'
 };
 
 // ----- DOM refs -----
@@ -1888,7 +1890,8 @@ async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict, uploadI
         uploadId: uploadId || '',
         baseName: buildBaseName(),
         orderNo:  (state.order && state.order.orderNo)   || '',
-        customer: (state.order && state.order.customer)  || ''
+        customer: (state.order && state.order.customer)  || '',
+        fileHash: state.fileHash || ''
     });
 
     let response;
@@ -1919,7 +1922,8 @@ async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict, uploadI
                     uploadId: uploadId || '',
                     baseName: buildBaseName(),
                     orderNo:  (state.order && state.order.orderNo)  || '',
-                    customer: (state.order && state.order.customer) || ''
+                    customer: (state.order && state.order.customer) || '',
+                    fileHash: state.fileHash || ''
                 })
             });
             return { success: true, opaque: true };
@@ -1974,9 +1978,10 @@ async function fetchOrdinal() {
         state.ordinal = 1; state.ordinalState = 'idle';
         return;
     }
-    if (!state.order || !state.order.orderNo) {
-        // Without an order number two labels are indistinguishable — numbering them
-        // would be a guess, so leave the name alone and say why.
+    const orderNo = (state.order && state.order.orderNo) || '';
+    if (!orderNo && !state.fileHash) {
+        // Neither an order number nor a hash: two labels are indistinguishable, and
+        // numbering them would be a guess. Leave the name alone and say why.
         state.ordinal = 1; state.ordinalState = 'nokey';
         updatePreview();
         return;
@@ -1995,7 +2000,8 @@ async function fetchOrdinal() {
                 type:       'ordinal',
                 baseName:   buildBaseName(),
                 folderDate: inputDateToFolderDate(pickupDate.value || invoiceDate.value),
-                orderNo:    state.order.orderNo
+                orderNo:    orderNo,
+                fileHash:   state.fileHash
             }),
             redirect: 'follow'
         });
@@ -2006,7 +2012,10 @@ async function fetchOrdinal() {
         if (!data.success) throw new Error(data.error || 'lookup failed');
 
         state.ordinal = parseInt(data.ordinal, 10) || 1;
-        state.ordinalState = 'ok';
+        // sameOrder = this exact order is already in the folder. It keeps ITS number
+        // (never becomes "2nd Order") — uploading will offer to replace it.
+        state.ordinalState = data.sameOrder ? 'same' : 'ok';
+        state.sameAs = data.sameOrder ? (data.sameName || '') : '';
     } catch (err) {
         if (seq !== ordinalSeq) return;
         // An older GAS deployment (no 'ordinal' action) lands here too — degrade to
@@ -2078,6 +2087,22 @@ driveBtn.addEventListener('click', async () => {
             result = await uploadToGDrive(freshBuffer, filename, folderDate, choice, uploadId);
         }
 
+        // The identical PDF was already in the folder, so the server wrote nothing.
+        // Report it as done — there is genuinely nothing to do, and no second copy.
+        if (result.identical) {
+            state.ordinal = parseInt(result.ordinal, 10) || 1;
+            state.ordinalState = 'same';
+            state.sameAs = result.filename || '';
+            updatePreview();
+            const idLink = result.fileUrl ? ` · <a href="${result.fileUrl}" target="_blank">Open file</a>` : '';
+            setDriveStatus(
+                `✓ Already saved — this exact order is in <strong>IBI Daily Orders / ${result.folder}</strong> ` +
+                `as <strong>${result.filename}</strong>. Nothing was changed (no second copy).${idLink}`,
+                'success'
+            );
+            return;
+        }
+
         if (result.opaque) {
             // no-cors fallback fired — request was sent but the browser blocked the
             // confirmation. Show AMBER (not green) so the user knows to verify.
@@ -2129,11 +2154,21 @@ function askConflict(info) {
         // the folder, so this is a re-upload of the SAME order, not a new one. Say so —
         // "the filename exists" would be misleading when a different order just gets
         // the next number automatically and never prompts at all.
-        $('conflictMsg').innerHTML = info.sameOrder
+        // unidentified = a file saved before v8 shares this product+day, so its order
+        // number can't be read and we can't prove whether it's this same order. Saying
+        // "already exists" would be a guess in either direction — spell out the doubt.
+        $('conflictMsg').innerHTML = info.unidentified
+            ? `<strong>${escapeHtml(info.filename)}</strong> is already in <strong>${info.folder}</strong> ` +
+              `for this same product and day, but it was saved before order numbers were recorded, ` +
+              `so it can't be checked against this one.<br><br>` +
+              `<strong>Same order?</strong> Choose Overwrite to replace it. ` +
+              `<strong>A different order?</strong> Choose Keep both.`
+            : info.sameOrder
             ? `Order <strong>${escapeHtml(info.orderNo || '')}</strong> is already saved in ` +
               `<strong>${info.folder}</strong> as <strong>${escapeHtml(info.filename)}</strong>` +
-              (info.existingCount > 1 ? ` (${info.existingCount} copies)` : '') + '.'
-            : `<strong>${info.filename}</strong> already exists in <strong>${info.folder}</strong>` +
+              (info.existingCount > 1 ? ` (${info.existingCount} copies)` : '') +
+              `, but this PDF isn't identical to it (the label was probably re-downloaded).`
+            : `<strong>${escapeHtml(info.filename)}</strong> already exists in <strong>${info.folder}</strong>` +
               (info.existingCount > 1 ? ` (${info.existingCount} copies)` : '') + '.';
         $('conflictRenameHint').textContent = info.suggestedName
             ? ('Save as: ' + info.suggestedName)
@@ -3343,8 +3378,11 @@ async function processFile(file) {
         state.order = (detectedType === 'manifest')
             ? null
             : extractOrderIdentity(text, pageTexts, state.isMultiOrder);
+        // Hash the ORIGINAL bytes (cloneBuffer — pdf.js has consumed arrayBuffer by now).
+        state.fileHash = await computeFileHash(cloneBuffer.slice(0));
         state.ordinal = 1;
         state.ordinalState = 'idle';
+        state.sameAs = '';
 
         state.detected = {
             platform: detectedPlatform,
@@ -3599,25 +3637,52 @@ function extractOrderNo(text) {
     return '';
 }
 
-// Customer name — display only. Read from the raw (newline-bearing) text because every
-// platform puts the name on its own line directly under an address heading.
+// Customer name — display only.
+// NOTE: PDF.js joins every text item with a SPACE, so the page arrives as one long
+// line ("Customer Address  Karthik Kaumar  17-73/1  …") — there are no newlines to
+// anchor on. Each pattern therefore grabs the run of letters after the address
+// heading and stops at the first thing a name can't contain: a digit (house number),
+// a comma, or a dash.
 const CUSTOMER_PATTERNS = [
-    /\bcustomer\s+address\s*[\r\n]+\s*([^\r\n]{2,60})/i,              // Meesho label
-    /\bbill\s+to\s*\/\s*ship\s+to\s*[\r\n]+\s*([^\r\n]{2,60})/i,      // Meesho invoice
-    /\bship\s+to\s*:?\s*[\r\n]+\s*([^\r\n]{2,60})/i,                  // Amazon / Flipkart
-    /\bdeliver\s+to\s*:?\s*[\r\n]+\s*([^\r\n]{2,60})/i                // Shopsy
+    /\bcustomer\s+address\s*[:\-]?\s+([A-Za-z][A-Za-z.'\s]{1,48}?)\s*(?=\d|,|-|$)/i,        // Meesho label
+    /\bbill\s+to\s*\/\s*ship\s+to\s*[:\-]?\s+([A-Za-z][A-Za-z.'\s]{1,48}?)\s*(?=\d|,|-|$)/i, // Meesho invoice
+    /\bship\s+to\s*[:\-]?\s+([A-Za-z][A-Za-z.'\s]{1,48}?)\s*(?=\d|,|-|$)/i,                  // Amazon / Flipkart
+    /\bdeliver\s+to\s*[:\-]?\s+([A-Za-z][A-Za-z.'\s]{1,48}?)\s*(?=\d|,|-|$)/i                // Shopsy
 ];
+
+// Heading words that can trail the label before the real name starts.
+const CUSTOMER_NOISE = /^(?:name|to|mr|mrs|ms)\.?\s+/i;
 
 function extractCustomerName(text) {
     for (const re of CUSTOMER_PATTERNS) {
         const m = String(text || '').match(re);
         if (!m || !m[1]) continue;
-        // "Karthik Kaumar - 17-73/1, punachanadra rao shop" → "Karthik Kaumar"
-        let name = m[1].split(/\s+[-–]\s+|,/)[0].trim();
-        name = name.replace(/[^A-Za-z.\s'\-]/g, '').replace(/\s+/g, ' ').trim();
-        if (name.length >= 2 && /[A-Za-z]{2}/.test(name)) return name;
+        let name = m[1].replace(CUSTOMER_NOISE, '').replace(/\s+/g, ' ').trim();
+        // Guard against swallowing the next heading when a label has no name under it.
+        if (name.length > 40) name = name.split(/\s+/).slice(0, 4).join(' ');
+        if (name.length >= 3 && /[A-Za-z]{2}/.test(name)) return name;
     }
     return '';
+}
+
+/**
+ * SHA-256 of the PDF bytes, as hex. This is the second half of an order's identity:
+ * the order number says WHICH order, the hash says whether the file is byte-for-byte
+ * the one already in Drive. It is what lets the script recognise a re-upload of a file
+ * saved before the order number was ever recorded.
+ * Returns '' where crypto.subtle is unavailable (non-secure context) — callers treat
+ * an empty hash as "unknown", never as a match.
+ */
+async function computeFileHash(buffer) {
+    try {
+        if (!self.crypto || !crypto.subtle || !buffer) return '';
+        const digest = await crypto.subtle.digest('SHA-256', buffer);
+        return Array.from(new Uint8Array(digest))
+            .map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) {
+        console.warn('Hash unavailable:', e);
+        return '';
+    }
 }
 
 function extractOrderIdentity(text, pageTexts, isMulti) {
@@ -3721,6 +3786,14 @@ function renderOrdinalNote() {
                   ' already in the Drive folder.' + (whoTxt ? '<br>' + whoTxt : '')
                 : '✓ First order for this product today.' + (whoTxt ? '<br>' + whoTxt : '');
             color = (state.ordinal >= 2) ? '#f59e0b' : 'var(--text-muted)'; break;
+        case 'same':
+            // The same order, not a new one — say so plainly, because this is exactly
+            // the case that must NOT turn into "2nd Order".
+            msg = '♻ This order is <strong>already saved</strong> in Drive' +
+                  (state.sameAs ? ' as <strong>' + escapeHtml(state.sameAs) + '</strong>' : '') +
+                  ' — uploading will replace it, not add a second copy.' +
+                  (whoTxt ? '<br>' + whoTxt : '');
+            color = '#3b82f6'; break;
         case 'nokey':
             msg = '⚠ No order number found in this PDF — can\'t tell it apart from another order, so it won\'t be auto-numbered.';
             color = '#f59e0b'; break;
@@ -3845,8 +3918,10 @@ clearBtn.addEventListener('click', () => {
     state.fullText = '';
     state.detected = {};
     state.order = null;
+    state.fileHash = '';
     state.ordinal = 1;
     state.ordinalState = 'idle';
+    state.sameAs = '';
     ordinalSeq++;                        // cancel any in-flight ordinal lookup
     clearTimeout(ordinalTimer);
     ordinalNote.style.display = 'none';

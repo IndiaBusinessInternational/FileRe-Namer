@@ -1,5 +1,5 @@
 /**
- * IBI File Re-Namer — Google Drive Upload Endpoint  (v7 — same-day order numbering)
+ * IBI File Re-Namer — Google Drive Upload Endpoint  (v8 — re-upload = replace, not "2nd Order")
  * Google Apps Script (GAS) Web App
  *
  * ══════════════════════════════════════════════════════════════════════
@@ -7,6 +7,24 @@
  *     Deploy ▸ Manage deployments ▸ (pencil ✏️) ▸ Version: New version ▸ Deploy
  *     Otherwise Google keeps running the OLD code.
  * ══════════════════════════════════════════════════════════════════════
+ *
+ *  WHAT'S NEW IN v8 (fixes two v7 bugs):
+ *   • RE-UPLOADING THE SAME ORDER NO LONGER BECOMES "2nd Order". v7 could only
+ *     recognise an order by the stamp it wrote itself, so every file saved before
+ *     v7 looked like a brand-new order and its re-upload got numbered. v8 also
+ *     compares the PDF's BYTES (SHA-256, sent by the website and computed here for
+ *     unstamped files): an identical PDF is unambiguously the same order. When the
+ *     identical file is already there, NOTHING is written — a replace with identical
+ *     bytes is a no-op, so there is no second copy and no prompt.
+ *     If a pre-v8 file shares the product+day and the bytes DON'T match, its order
+ *     number is unknowable — v8 asks (Overwrite / keep both) instead of assuming it
+ *     is a different order. Once every file in a day-folder is v8-stamped, different
+ *     orders are auto-numbered silently again.
+ *
+ *   • FIXED an upload crash on re-upload: v7 did `file.ordinal = n` on a DriveApp
+ *     File, which is a Java-backed host object and rejects new properties. That threw
+ *     on exactly the path a duplicate takes, so the upload failed. Ordinals now ride
+ *     in plain {file, ordinal} objects.
  *
  *  WHAT'S NEW IN v7:
  *   • SAME-DAY ORDER NUMBERING. A second, genuinely-different order for the same
@@ -76,6 +94,7 @@ function doPost(e) {
     const conflict   = String(body.conflict || '').trim().toLowerCase();  // '', 'overwrite', 'rename'
     const uploadId   = String(body.uploadId || '').trim();                // idempotency key (per click)
     const orderNo    = String(body.orderNo  || '').trim();                // identity of this order
+    const fileHash   = String(body.fileHash || '').trim().toLowerCase();  // SHA-256 of the PDF bytes
     const customer   = String(body.customer || '').trim();                // display only
     // Filename minus any "2nd Order" suffix and ".pdf" — the group this order counts within.
     const baseName   = String(body.baseName || '').trim() || stripOrdinal(dropExt(filename));
@@ -118,36 +137,75 @@ function doPost(e) {
       let replaced = 0;
       let ordinal  = 1;
 
-      if (orderNo) {
+      if (orderNo || fileHash) {
         // ── Order-aware path: count this product's orders already in the folder ──
-        const scan = scanOrders(dateFolder, baseName, orderNo);
+        const scan = scanOrders(dateFolder, baseName, orderNo, fileHash);
         ordinal = scan.ordinal;
 
-        if (scan.sameOrderFiles.length > 0 && conflict !== 'overwrite' && conflict !== 'rename') {
-          // THIS order (same order number) is already saved → ask before touching it.
-          // A DIFFERENT order never reaches here: it just gets the next number below.
+        // The identical PDF is already sitting in the folder. Replacing it with itself
+        // would change nothing, so don't write at all — just report where it lives.
+        // This is the "same order re-uploaded" case: never a second copy.
+        const identical = firstIdentical(scan.matches);
+        if (identical && conflict !== 'rename') {
+          const out0 = JSON.stringify({
+            success:   true,
+            identical: true,
+            filename:  identical.file.getName(),
+            ordinal:   identical.ordinal,
+            orderNo:   orderNo,
+            folder:    'Orders ' + folderDate,
+            fileId:    identical.file.getId(),
+            fileUrl:   'https://drive.google.com/file/d/' + identical.file.getId() + '/view',
+            folderUrl: 'https://drive.google.com/drive/folders/' + dateFolder.getId()
+          });
+          if (cacheKey) cache.put(cacheKey, out0, 600);
+          return ContentService.createTextOutput(out0).setMimeType(ContentService.MimeType.JSON);
+        }
+
+        // Same order, different bytes (e.g. the label was re-downloaded) → ask.
+        if (scan.matches.length > 0 && conflict !== 'overwrite' && conflict !== 'rename') {
           return json({
             success:       false,
             conflict:      true,
-            filename:      scan.sameOrderFiles[0].getName(),
+            filename:      scan.matches[0].file.getName(),
             folder:        'Orders ' + folderDate,
-            existingCount: scan.sameOrderFiles.length,
-            existingUrl:   'https://drive.google.com/file/d/' + scan.sameOrderFiles[0].getId() + '/view',
+            existingCount: scan.matches.length,
+            existingUrl:   'https://drive.google.com/file/d/' + scan.matches[0].file.getId() + '/view',
             sameOrder:     true,
             orderNo:       orderNo,
-            suggestedName: baseName + ordinalSuffix(scan.ordinal) + '.pdf'
+            suggestedName: baseName + ordinalSuffix(scan.next) + '.pdf'
+          });
+        }
+
+        // Nothing provably matches, but a pre-v8 file shares this product+day and we
+        // cannot read its order number. It might BE this order. Numbering blindly is
+        // what produced bogus "2nd Order" copies, so ask instead of guessing.
+        if (scan.matches.length === 0 && scan.unknowns.length > 0 &&
+            conflict !== 'overwrite' && conflict !== 'rename') {
+          return json({
+            success:       false,
+            conflict:      true,
+            filename:      scan.unknowns[0].file.getName(),
+            folder:        'Orders ' + folderDate,
+            existingCount: scan.unknowns.length,
+            existingUrl:   'https://drive.google.com/file/d/' + scan.unknowns[0].file.getId() + '/view',
+            unidentified:  true,
+            orderNo:       orderNo,
+            suggestedName: baseName + ordinalSuffix(scan.next) + '.pdf'
           });
         }
 
         if (conflict === 'overwrite') {
-          // Replace this order's existing copy in place, keeping its number.
-          ordinal = scan.sameOrderFiles.length ? scan.sameOrderFiles[0].ordinal : scan.ordinal;
-          for (let i = 0; i < scan.sameOrderFiles.length; i++) {
-            scan.sameOrderFiles[i].setTrashed(true);
+          // Replace the copy we told the user about, keeping its number.
+          const targets = scan.matches.length ? scan.matches : scan.unknowns;
+          ordinal = targets.length ? targets[0].ordinal : scan.ordinal;
+          for (let i = 0; i < targets.length; i++) {
+            targets[i].file.setTrashed(true);
             replaced++;
           }
+        } else if (conflict === 'rename') {
+          ordinal = scan.next;          // keep both → this one takes the next number
         }
-        // 'rename' and the plain new-order path both take the next free number.
         saveName = baseName + ordinalSuffix(ordinal) + '.pdf';
 
       } else {
@@ -182,10 +240,11 @@ function doPost(e) {
       // Stamp the order number onto the file so future uploads can recognise it.
       // Drive's description is the only per-file slot that survives independently
       // of the name, which is what lets the name stay clean ("2nd Order", no IDs).
-      if (orderNo) {
+      if (orderNo || fileHash) {
         try {
           file.setDescription(JSON.stringify({
             orderNo:  orderNo,
+            hash:     fileHash,
             customer: customer,
             ordinal:  ordinal,
             base:     baseName
@@ -229,7 +288,7 @@ function doPost(e) {
 function doGet() {
   return json({
     status: 'active', rootFolder: ROOT_FOLDER_NAME, keepDays: KEEP_DAYS,
-    version: 7, conflictPrompt: true, idempotent: true, orderNumbering: true
+    version: 8, conflictPrompt: true, idempotent: true, orderNumbering: true, hashIdentity: true
   });
 }
 
@@ -242,9 +301,10 @@ function handleOrdinalLookup(body) {
   const folderDate = String(body.folderDate || '').trim().replace(/\s+/g, ' ');
   const baseName   = String(body.baseName || '').trim();
   const orderNo    = String(body.orderNo || '').trim();
+  const fileHash   = String(body.fileHash || '').trim().toLowerCase();
 
   if (!folderDate || !baseName) throw new Error('Missing folderDate or baseName');
-  if (!orderNo) return json({ success: true, ordinal: 1, reason: 'no order number' });
+  if (!orderNo && !fileHash) return json({ success: true, ordinal: 1, reason: 'no identity' });
 
   const root   = DriveApp.getRootFolder();
   const parent = getFolderOrNull(root, ROOT_FOLDER_NAME);
@@ -253,14 +313,26 @@ function handleOrdinalLookup(body) {
   const dateFolder = getFolderOrNull(parent, 'Orders ' + folderDate);
   if (!dateFolder) return json({ success: true, ordinal: 1, reason: 'no folder for that day yet' });
 
-  const scan = scanOrders(dateFolder, baseName, orderNo);
+  const scan = scanOrders(dateFolder, baseName, orderNo, fileHash);
+  const same = scan.matches.length > 0;
   return json({
     success:   true,
     ordinal:   scan.ordinal,
     existing:  scan.total,
-    sameOrder: scan.sameOrderFiles.length > 0,
+    sameOrder: same,
+    sameName:  same ? scan.matches[0].file.getName() : '',
+    identical: !!firstIdentical(scan.matches),
+    unknown:   scan.unknowns.length,
     folder:    'Orders ' + folderDate
   });
+}
+
+/** The first provably byte-identical match, or null. */
+function firstIdentical(matches) {
+  for (let i = 0; i < matches.length; i++) {
+    if (matches[i].identical) return matches[i];
+  }
+  return null;
 }
 
 /**
@@ -273,7 +345,7 @@ function handleOrdinalLookup(body) {
  *     rather than inventing a new one.
  *   • otherwise `ordinal` is (highest number present + 1), i.e. the next free slot.
  */
-function scanOrders(folder, baseName, orderNo) {
+function scanOrders(folder, baseName, orderNo, fileHash) {
   // "<base>.pdf" = 1st order; "<base> 2nd Order.pdf" = 2nd; the optional " (2)" tail
   // matches legacy copies made by v4-v6's Rename choice so they're counted too.
   const re = new RegExp(
@@ -282,7 +354,8 @@ function scanOrders(folder, baseName, orderNo) {
 
   let maxOrdinal = 0;
   let total = 0;
-  const sameOrderFiles = [];
+  const matches  = [];   // {file, ordinal, identical} — provably THIS order
+  const unknowns = [];   // {file, ordinal} — same product/day, identity unreadable
 
   const it = folder.getFiles();
   while (it.hasNext()) {
@@ -290,31 +363,67 @@ function scanOrders(folder, baseName, orderNo) {
     const m = f.getName().match(re);
     if (!m) continue;                       // different product / different day-group
 
+    // NOTE: never attach properties to a DriveApp File — it is a Java-backed host
+    // object and rejects them. Carry the ordinal in a plain object alongside it.
     const ord = m[1] ? parseInt(m[1], 10) : 1;
     total++;
     if (ord > maxOrdinal) maxOrdinal = ord;
 
-    if (readOrderNo(f) === orderNo) {
-      f.ordinal = ord;                      // remember which slot this order already owns
-      sameOrderFiles.push(f);
+    const info = readFileInfo(f);
+    if (info) {
+      // Stamped by v7+: the order number is authoritative. A stamped file with a
+      // different order number is a genuinely different order — no prompt needed.
+      if ((orderNo  && info.orderNo === orderNo) ||
+          (fileHash && info.hash    === fileHash)) {
+        matches.push({ file: f, ordinal: ord, identical: (!!fileHash && info.hash === fileHash) });
+      }
+    } else {
+      // No stamp (saved before v8). The name alone can't say which order this is, so
+      // fall back to the bytes: an identical PDF is unambiguously the same order.
+      // This is what stops a re-upload of a pre-v8 file becoming a bogus "2nd Order".
+      if (fileHash && sha256OfFile(f) === fileHash) {
+        matches.push({ file: f, ordinal: ord, identical: true });
+      } else {
+        unknowns.push({ file: f, ordinal: ord });
+      }
     }
   }
 
-  if (sameOrderFiles.length > 0) {
-    return { ordinal: sameOrderFiles[0].ordinal, total: total, sameOrderFiles: sameOrderFiles };
-  }
-  return { ordinal: maxOrdinal + 1, total: total, sameOrderFiles: [] };
+  return {
+    ordinal:  matches.length ? matches[0].ordinal : maxOrdinal + 1,
+    next:     maxOrdinal + 1,
+    total:    total,
+    matches:  matches,
+    unknowns: unknowns
+  };
 }
 
-/** The order number stamped on a file by v7+, or '' for files saved by older versions. */
-function readOrderNo(file) {
+/** What v8 stamps on each saved file, or null for files saved by older versions. */
+function readFileInfo(file) {
   try {
     const d = file.getDescription();
-    if (!d) return '';
+    if (!d) return null;
     const j = JSON.parse(d);
-    return String(j.orderNo || '');
+    if (!j || (!j.orderNo && !j.hash)) return null;
+    return { orderNo: String(j.orderNo || ''), hash: String(j.hash || '') };
   } catch (e) {
-    return '';   // not our JSON (hand-edited description) → treat as unknown
+    return null;   // not our JSON (hand-edited description) → treat as unidentified
+  }
+}
+
+/** SHA-256 of a Drive file's bytes, hex — same encoding the website computes. */
+function sha256OfFile(file) {
+  try {
+    const bytes  = file.getBlob().getBytes();
+    const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes);
+    // computeDigest returns SIGNED bytes; mask before hex-encoding.
+    let hex = '';
+    for (let i = 0; i < digest.length; i++) {
+      hex += ('0' + (digest[i] & 0xFF).toString(16)).slice(-2);
+    }
+    return hex;
+  } catch (e) {
+    return '';
   }
 }
 
