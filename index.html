@@ -4182,19 +4182,21 @@ async function startBatch(files) {
         }
     }
 
-    batch.busy = false;
-    renderBatch();
-
     const bad = batch.items.filter(i => i.status === 'error').length;
-    setBatchStatus(`✓ Read ${batch.items.length - bad} of ${batch.items.length} files. Review the names, then send.`,
-                   bad ? 'error' : 'success');
 
+    // Stay "busy" through the Drive check: it rewrites each row's name as answers land,
+    // which would clobber a name the user had started editing.
     if (getGasUrl()) {
         setBatchStatus('⟳ Checking Drive for earlier orders of these products today…', '');
         await fetchBatchOrdinals();
-        setBatchStatus('✓ Ready. Review the names, then Download all or Send all to GDrive.', 'success');
     }
+
+    batch.busy = false;
     renderBatch();
+    setBatchStatus(
+        `✓ Read ${batch.items.length - bad} of ${batch.items.length} file${batch.items.length === 1 ? '' : 's'}. ` +
+        `Review the names below, then Download all or Send all to GDrive.`,
+        bad ? 'error' : 'success');
 }
 
 batchDownloadBtn.addEventListener('click', async () => {
