@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v3.7</title>
+    <title>IBI File Re-Namer v3.8</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -31,6 +31,9 @@
 
     <!-- PDF.js for PDF text extraction -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- pdf-lib WRITES PDFs (pdf.js only reads them) — used to split a multi-order label
+         into one file per order. Same version the Invoice Separator app already uses. -->
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 
     <style>
         /* ========== ROOT VARIABLES ========== */
@@ -510,6 +513,29 @@
         }
         .action-buttons .btn-clear-row {
             grid-column: 1 / -1;   /* full-width Clear All on second row */
+        }
+
+        /* ========== SPLIT TOGGLE ========== */
+        .split-toggle {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-top: 12px;
+            padding: 11px 13px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--bg-input);
+            cursor: pointer;
+        }
+        .split-toggle input { margin-top: 2px; width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
+        .split-toggle strong { display: block; font-size: 13px; color: var(--text-main); }
+        .split-toggle em {
+            display: block;
+            font-style: normal;
+            font-size: 11px;
+            line-height: 1.5;
+            color: var(--text-muted);
+            margin-top: 3px;
         }
 
         /* ========== BATCH QUEUE ========== */
@@ -1001,7 +1027,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v3.7</span>
+        <span class="version-tag">v3.8</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1044,6 +1070,17 @@
                     <p>Invoice, Shipping Label, or Manifest &middot; one or many at a time</p>
                     <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple>
                 </div>
+
+                <!-- Splitter toggle: applies to the NEXT file(s) you pick -->
+                <label class="split-toggle" id="splitToggleRow">
+                    <input type="checkbox" id="splitToggle" checked>
+                    <span>
+                        <strong>✂ Split multi-order PDFs</strong>
+                        <em>A label sheet holding several orders is saved as one file per order,
+                            each named and numbered on its own. Untick to keep it as a single
+                            "Total N Orders" file.</em>
+                    </span>
+                </label>
 
                 <!-- Status banner -->
                 <div class="status-banner" id="statusBanner">
@@ -1186,7 +1223,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.7</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.8</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1365,6 +1402,7 @@ const manifestFields = $('manifestFields');
 const filenamePreview = $('filenamePreview');
 const previewText = $('previewText');
 const ordinalNote = $('ordinalNote');
+const splitToggle = $('splitToggle');
 const batchPanel       = $('batchPanel');
 const batchTitle       = $('batchTitle');
 const batchSubtitle    = $('batchSubtitle');
@@ -3951,6 +3989,111 @@ function dropPdfExt(name) {
     return String(name).replace(/\.pdf$/i, '');
 }
 
+const SPLIT_STORE = 'ibi_renamer_split';
+function getSplitEnabled() {
+    try { return localStorage.getItem(SPLIT_STORE) !== '0'; } catch { return true; }   // default ON
+}
+function setSplitEnabled(on) {
+    try { localStorage.setItem(SPLIT_STORE, on ? '1' : '0'); } catch (e) {}
+}
+
+/** The bytes to send/save for a queue item: split pages carry their own, others read the File. */
+async function itemBytes(it) {
+    return it.bytes ? it.bytes : await it.file.arrayBuffer();
+}
+
+/**
+ * Identity for ONE page carved out of a multi-order PDF.
+ *
+ * It must NOT be the hash of the page we generate: pdf-lib rewrites the file, so the
+ * bytes are not guaranteed to be identical from one run to the next, and a shifting
+ * hash would make every re-upload look like a changed file. Deriving it from the SOURCE
+ * file's hash plus the page number is stable — the same source page always resolves to
+ * the same identity, which is what makes a re-upload a replace instead of a "2nd Order".
+ */
+async function stablePageHash(sourceHash, pageIndex) {
+    if (!sourceHash) return '';
+    const bytes = new TextEncoder().encode(sourceHash + ':p' + pageIndex);
+    return await computeFileHash(bytes.buffer);
+}
+
+/**
+ * Expand one file into the queue items it should produce: normally itself, but a
+ * multi-order label sheet becomes one item per order when splitting is on.
+ */
+async function analyzeToItems(file, index) {
+    const item = await analyzeFile(file, index);
+    if (item.status !== 'ready' || !item.doc.isMultiOrder || !getSplitEnabled()) return [item];
+
+    if (typeof PDFLib === 'undefined') {
+        item.note = '⚠ Splitter didn\'t load (no connection?) — kept as one combined file.';
+        return [item];
+    }
+
+    // Which PAGES are orders. detectMultiOrderPages() filters the list and so loses the
+    // page numbers; we need them to copy the right pages, hence the explicit walk.
+    const pages = [];
+    (item._pageTexts || []).forEach((text, i) => {
+        if (!isOrderPage(text)) return;
+        const o = extractOrderFromPage(text);
+        if (o) pages.push({ index: i, product: o.product, qty: o.qty, text });
+    });
+    if (pages.length < 2) return [item];
+
+    try {
+        const src = await PDFLib.PDFDocument.load(item.buffer.slice(0));
+        const out = [];
+        for (const p of pages) {
+            const doc1 = await PDFLib.PDFDocument.create();
+            const [copied] = await doc1.copyPages(src, [p.index]);
+            doc1.addPage(copied);
+            const bytes = await doc1.save();
+
+            // Each order page carries its own dates; fall back to the sheet's.
+            const date = extractDate(p.text) || item.doc.invoiceDate;
+            const year = parseInt(String(date).substring(0, 4), 10) || new Date().getFullYear();
+            const pickup = extractPickupDate(p.text, year) || item.doc.pickupDate;
+
+            let product = p.product;
+            const cv = extractColorVariant(p.text);
+            if (cv && !product.toLowerCase().includes(cv.toLowerCase())) product = product + ' - ' + cv;
+
+            const doc = {
+                platform:     item.doc.platform,
+                docType:      'invoice',
+                isMultiOrder: false,          // it is a single order now
+                product:      product,
+                qty:          p.qty || 1,
+                orders:       1,
+                invoiceDate:  date,
+                pickupDate:   pickup
+            };
+            const sub = {
+                id: item.id + '-p' + p.index,
+                file: null,
+                bytes: bytes,
+                srcName: item.srcName + ' — order ' + (out.length + 1) + ' of ' + pages.length,
+                buffer: null,
+                order: extractOrderIdentity(p.text, null, false),
+                fileHash: await stablePageHash(item.fileHash, p.index),
+                doc: doc,
+                base: baseNameFrom(doc),
+                ordinal: 1,
+                sameOrder: false,
+                status: 'ready',
+                note: '✂ Split from ' + escapeHtml(item.srcName)
+            };
+            sub.outName = nameWithOrdinal(sub.base, 'invoice', 1);
+            out.push(sub);
+        }
+        return out;
+    } catch (err) {
+        console.error('Split failed for', file.name, err);
+        item.note = '⚠ Couldn\'t split this PDF (' + err.message + ') — kept as one combined file.';
+        return [item];
+    }
+}
+
 /**
  * Parse ONE file into a queue item. Deliberately touches no DOM: it runs the same
  * detectors as the single-file path but returns a plain object, so the two paths can
@@ -4015,6 +4158,7 @@ async function analyzeFile(file, index) {
         item.base     = baseNameFrom(item.doc);
         item.outName  = nameWithOrdinal(item.base, docType, 1);
         item.status   = 'ready';
+        item._pageTexts = pageTexts;   // kept so analyzeToItems() can split without re-parsing
     } catch (err) {
         console.error('Batch parse failed for', file.name, err);
         item.status = 'error';
@@ -4166,11 +4310,26 @@ async function startBatch(files) {
 
     for (let i = 0; i < files.length; i++) {
         setBatchStatus(`⟳ Reading ${i + 1} of ${files.length}…`, '');
-        batch.items.push(await analyzeFile(files[i], i));
+        // One file can yield several items — a multi-order sheet splits into per-order files.
+        for (const it of await analyzeToItems(files[i], i)) batch.items.push(it);
         renderBatch();
     }
+    await finishBatch();
+}
 
-    // Same PDF picked twice in one go — keep the first, skip the rest.
+/** Show a queue built from already-parsed items (one split sheet handed over by handleFiles). */
+async function startBatchWithItems(items) {
+    batch.items = items;
+    batch.busy = true;
+    showBatchMode(true);
+    hideStatus();
+    renderBatch();
+    await finishBatch();
+}
+
+/** Shared tail: de-duplicate, ask Drive for numbers, then hand the queue to the user. */
+async function finishBatch() {
+    // The same order twice in one go — keep the first, skip the rest.
     const seen = new Set();
     for (const it of batch.items) {
         if (it.status !== 'ready' || !it.fileHash) continue;
@@ -4205,7 +4364,7 @@ batchDownloadBtn.addEventListener('click', async () => {
     for (const it of batch.items) {
         if (it.status !== 'ready') continue;
         try {
-            const bytes = await it.file.arrayBuffer();
+            const bytes = await itemBytes(it);
             const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
             const a = document.createElement('a');
             a.href = url; a.download = it.outName; a.style.display = 'none';
@@ -4248,7 +4407,7 @@ batchDriveBtn.addEventListener('click', async () => {
             : 'u' + Date.now() + '-' + Math.random().toString(36).slice(2);
 
         try {
-            const bytes = await it.file.arrayBuffer();
+            const bytes = await itemBytes(it);
             let res = await uploadToGDrive(bytes, it.outName, folderDate, '', uploadId, identity);
 
             if (res.conflict) {
@@ -4304,17 +4463,39 @@ batchClearBtn.addEventListener('click', () => {
 });
 
 /** Entry point for both the file picker and drag-drop. */
-function handleFiles(fileList) {
+async function handleFiles(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
-    if (files.length === 1) {
-        showBatchMode(false);
-        batch.items = [];
-        processFile(files[0]);
-    } else {
-        startBatch(files);
+
+    if (files.length > 1) return startBatch(files);
+
+    // A single file usually means the normal form. The exception is a multi-order sheet
+    // with splitting on: that becomes several orders, which only the queue can show. We
+    // can't know which without reading it, so peek first and hand off if it splits.
+    if (getSplitEnabled()) {
+        showStatus('Reading PDF…', 'info', true);
+        let items = [];
+        try {
+            items = await analyzeToItems(files[0], 0);
+        } catch (err) {
+            console.warn('Split peek failed, using the single-file form:', err);
+        }
+        if (items.length > 1) return startBatchWithItems(items);
     }
+
+    showBatchMode(false);
+    batch.items = [];
+    processFile(files[0]);
 }
+
+// Splitter toggle — remembered per device, applies to the next file(s) you pick.
+splitToggle.checked = getSplitEnabled();
+splitToggle.addEventListener('change', () => {
+    setSplitEnabled(splitToggle.checked);
+    showStatus(splitToggle.checked
+        ? '✂ Multi-order PDFs will be split into one file per order.'
+        : 'Multi-order PDFs will be kept as one combined file.', 'info');
+});
 
 // =================== UPLOAD ZONE ===================
 fileInput.addEventListener('change', (e) => {
