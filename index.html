@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.1</title>
+    <title>IBI File Re-Namer v4.2</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -145,6 +145,8 @@
         }
 
         .version-tag {
+            cursor: pointer;
+            user-select: none;
             font-weight: 900;
             font-size: 15px;
             color: var(--accent-color);
@@ -514,6 +516,15 @@
         .action-buttons .btn-clear-row {
             grid-column: 1 / -1;   /* full-width Clear All on second row */
         }
+
+        /* Unlocking isn't destructive, so it takes the primary accent rather than the
+           red the Overwrite action uses. */
+        .ceo-ok {
+            background: var(--btn-primary);
+            color: var(--btn-primary-text);
+            border-color: var(--btn-primary);
+        }
+        .ceo-ok:hover { background: var(--btn-primary-hover); border-color: var(--btn-primary-hover); }
 
         /* ========== SPLIT TOGGLE ========== */
         .split-toggle {
@@ -1053,9 +1064,14 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v4.1</span>
+        <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
+             Nothing on screen advertises that, which is the point. -->
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.2">v4.2</span>
         <div style="display:flex;align-items:center;gap:0;">
-            <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
+            <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
+                 existing settings code, and the two places that open Settings themselves,
+                 keep working unchanged. -->
+            <button class="settings-btn" id="settingsBtn" title="AI & Drive Settings" style="display:none;">
                 <span id="settingsIcon">⚙</span> AI Key
             </button>
             <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
@@ -1250,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.1</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.2</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1356,6 +1372,24 @@
     </div>
 
     <!-- ============== DUPLICATE FILENAME MODAL ============== -->
+    <!-- CEO lock: guards the API keys / Drive endpoint behind a PIN -->
+    <div class="modal-overlay" id="ceoOverlay">
+        <div class="settings-modal" style="max-width:360px;">
+            <h3>🔒 CEO Access</h3>
+            <p class="modal-subtitle">Enter the CEO PIN to open AI &amp; Drive settings.</p>
+            <input type="password" id="ceoPin" inputmode="numeric" autocomplete="off"
+                   maxlength="12" placeholder="••••"
+                   style="width:100%;text-align:center;letter-spacing:8px;font-size:22px;padding:12px;
+                          border:1.5px solid var(--border-strong);border-radius:var(--radius-md);
+                          background:var(--bg-input);color:var(--text-main);">
+            <div id="ceoError" style="display:none;color:var(--btn-danger);font-size:13px;margin-top:8px;"></div>
+            <div class="conflict-actions" style="margin-top:14px;">
+                <button class="conflict-btn ceo-ok" id="ceoOkBtn">Unlock</button>
+                <button class="conflict-btn conflict-cancel" id="ceoCancelBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="conflictOverlay">
         <div class="settings-modal" style="max-width:430px;">
             <h3 id="conflictTitle">⚠ This file already exists</h3>
@@ -1431,6 +1465,13 @@ const filenamePreview = $('filenamePreview');
 const previewText = $('previewText');
 const ordinalNote = $('ordinalNote');
 const splitToggle = $('splitToggle');
+const settingsBtn = $('settingsBtn');
+const versionTag  = $('versionTag');
+const ceoOverlay  = $('ceoOverlay');
+const ceoPin      = $('ceoPin');
+const ceoError    = $('ceoError');
+const ceoOkBtn    = $('ceoOkBtn');
+const ceoCancelBtn= $('ceoCancelBtn');
 const batchPanel       = $('batchPanel');
 const batchTitle       = $('batchTitle');
 const batchSubtitle    = $('batchSubtitle');
@@ -1522,13 +1563,72 @@ function showProviderFields(provider) {
     $('deepseekFields').style.display = provider === 'deepseek' ? 'block' : 'none';
 }
 
-// Settings modal open / close
-$('settingsBtn').addEventListener('click', () => {
+// =================== CEO LOCK ===================
+// The API keys and the Drive endpoint sit behind a PIN, and the way in is the version
+// badge — there is no visible "Settings" control for staff to find. The AI Key button
+// only appears once unlocked.
+//
+// Unlock lasts for THIS TAB only (sessionStorage, not localStorage): the point is to
+// keep keys away from whoever else uses the machine, and a permanent per-device unlock
+// would defeat that on a shared PC. Closing the tab re-locks.
+const CEO_PIN   = '8899';
+const CEO_STORE = 'ibi_renamer_ceo';
+
+function isCeoUnlocked() {
+    try { return sessionStorage.getItem(CEO_STORE) === '1'; } catch { return false; }
+}
+function setCeoUnlocked(on) {
+    try { on ? sessionStorage.setItem(CEO_STORE, '1') : sessionStorage.removeItem(CEO_STORE); } catch (e) {}
+    settingsBtn.style.display = on ? '' : 'none';
+}
+
+function openSettings() {
     refreshSettingsUI();
     $('keyStatus').textContent = '';
     $('settingsOverlay').classList.add('open');
     ['geminiKeyInput','openaiKeyInput','claudeKeyInput','deepseekKeyInput'].forEach(id => { $(id).type = 'password'; });
+}
+
+/**
+ * The ONLY way to reach Settings. Everything that wants to open it comes through here,
+ * so the lock can't be walked around by whatever calls it.
+ */
+function requestSettings() {
+    if (isCeoUnlocked()) return openSettings();
+    ceoError.style.display = 'none';
+    ceoPin.value = '';
+    ceoOverlay.classList.add('open');
+    setTimeout(() => ceoPin.focus(), 60);
+}
+
+function tryCeoPin() {
+    if (ceoPin.value.trim() === CEO_PIN) {
+        setCeoUnlocked(true);
+        ceoOverlay.classList.remove('open');
+        ceoPin.value = '';
+        openSettings();
+    } else {
+        ceoError.textContent = '✕ Wrong PIN.';
+        ceoError.style.display = 'block';
+        ceoPin.value = '';
+        ceoPin.focus();
+    }
+}
+
+versionTag.addEventListener('click', requestSettings);
+versionTag.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); requestSettings(); }
 });
+ceoOkBtn.addEventListener('click', tryCeoPin);
+ceoPin.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); tryCeoPin(); } });
+ceoCancelBtn.addEventListener('click', () => ceoOverlay.classList.remove('open'));
+ceoOverlay.addEventListener('click', e => { if (e.target === ceoOverlay) ceoOverlay.classList.remove('open'); });
+
+// Reflect the current lock state on load (a reload in the same tab stays unlocked).
+setCeoUnlocked(isCeoUnlocked());
+
+// Settings modal open / close
+$('settingsBtn').addEventListener('click', openSettings);
 $('modalClose').addEventListener('click', () => $('settingsOverlay').classList.remove('open'));
 $('settingsOverlay').addEventListener('click', e => { if (e.target === $('settingsOverlay')) $('settingsOverlay').classList.remove('open'); });
 
@@ -2187,7 +2287,7 @@ driveBtn.addEventListener('click', async () => {
         // storage, so a URL added on a computer doesn't carry over to a phone (and
         // vice-versa). Don't fail silently — explain it and open Settings to the field.
         setDriveStatus('Google Drive isn\'t set up on this device yet. Settings are saved separately on each phone/computer — paste your Apps Script <strong>/exec</strong> URL in ⚙ Settings (opening now), then tap <strong>Save All</strong>.', 'error');
-        $('settingsBtn').click();
+        requestSettings();
         setTimeout(() => { try { $('gasUrlInput').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('gasUrlInput').focus(); } catch (e) {} }, 120);
         return;
     }
@@ -4514,7 +4614,7 @@ batchDownloadBtn.addEventListener('click', async () => {
 batchDriveBtn.addEventListener('click', async () => {
     if (!getGasUrl()) {
         setBatchStatus('Google Drive isn\'t set up on this device yet — add the Apps Script <strong>/exec</strong> URL in ⚙ Settings.', 'error');
-        $('settingsBtn').click();
+        requestSettings();
         return;
     }
     batch.busy = true; renderBatch();
