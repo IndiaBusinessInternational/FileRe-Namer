@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v3.6</title>
+    <title>IBI File Re-Namer v3.7</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -512,6 +512,42 @@
             grid-column: 1 / -1;   /* full-width Clear All on second row */
         }
 
+        /* ========== BATCH QUEUE ========== */
+        .batch-row {
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 11px 13px;
+            margin-bottom: 9px;
+            background: var(--bg-input);
+        }
+        .batch-row.is-done   { border-color: var(--btn-success); background: rgba(16,185,129,0.07); }
+        .batch-row.is-error  { border-color: var(--btn-danger);  background: rgba(239,68,68,0.07); }
+        .batch-row.is-active { border-color: var(--accent-color); background: var(--accent-soft); }
+        .batch-src {
+            font-size: 11px;
+            color: var(--text-soft);
+            margin-bottom: 6px;
+            word-break: break-all;
+        }
+        .batch-name {
+            width: 100%;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm);
+            background: var(--bg-card);
+            color: var(--text-main);
+        }
+        .batch-note { font-size: 11px; margin-top: 6px; line-height: 1.5; }
+        .batch-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 14px;
+        }
+        .batch-actions .btn-clear-row { grid-column: 1 / -1; }
+
         .btn {
             padding: 13px 18px;
             border-radius: var(--radius-md);
@@ -965,7 +1001,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v3.6</span>
+        <span class="version-tag">v3.7</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1004,9 +1040,9 @@
                 <h2 class="step-title"><span class="step-number">2</span> Upload PDF File</h2>
                 <div class="upload-zone" id="uploadZone">
                     <div class="upload-icon">+</div>
-                    <h3>Drop PDF here or tap to browse</h3>
-                    <p>Invoice, Shipping Label, or Manifest</p>
-                    <input type="file" id="fileInput" accept="application/pdf,.pdf">
+                    <h3>Drop PDFs here or tap to browse</h3>
+                    <p>Invoice, Shipping Label, or Manifest &middot; one or many at a time</p>
+                    <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple>
                 </div>
 
                 <!-- Status banner -->
@@ -1106,6 +1142,23 @@
                 </div>
             </section>
 
+            <!-- ===== Batch queue: shown instead of the single-file form for 2+ PDFs ===== -->
+            <section class="card batch-panel" id="batchPanel" style="display:none;">
+                <div class="card-header">
+                    <h1><span id="batchTitle">Review files</span></h1>
+                    <p id="batchSubtitle">Check the new names, then send them all.</p>
+                </div>
+                <div class="card-body">
+                    <div id="batchList"></div>
+                    <div class="batch-actions">
+                        <button class="btn btn-primary" id="batchDownloadBtn" disabled>⬇ Download all</button>
+                        <button class="btn btn-gdrive" id="batchDriveBtn" disabled>☁ Send all to GDrive</button>
+                        <button class="btn btn-danger btn-clear-row" id="batchClearBtn">✕ Clear All</button>
+                    </div>
+                    <div class="drive-status" id="batchStatus"></div>
+                </div>
+            </section>
+
             <!-- Filename Preview -->
             <div class="filename-preview" id="filenamePreview" style="display: none;">
                 <span class="label">NEW FILENAME</span>
@@ -1133,7 +1186,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.6</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.7</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1312,6 +1365,14 @@ const manifestFields = $('manifestFields');
 const filenamePreview = $('filenamePreview');
 const previewText = $('previewText');
 const ordinalNote = $('ordinalNote');
+const batchPanel       = $('batchPanel');
+const batchTitle       = $('batchTitle');
+const batchSubtitle    = $('batchSubtitle');
+const batchList        = $('batchList');
+const batchDownloadBtn = $('batchDownloadBtn');
+const batchDriveBtn    = $('batchDriveBtn');
+const batchClearBtn    = $('batchClearBtn');
+const batchStatus      = $('batchStatus');
 const downloadBtn = $('downloadBtn');
 const driveBtn    = $('driveBtn');
 const clearBtn    = $('clearBtn');
@@ -1869,7 +1930,7 @@ function arrayBufferToBase64(buffer) {
  * still blocks reading the response, we retry in no-cors mode (fire-and-forget):
  * the file still uploads, we just can't read the confirmation.
  */
-async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict, uploadId) {
+async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict, uploadId, identity) {
     const gasUrl = getGasUrl();
     if (!gasUrl) throw new Error('GDrive URL not set — open ⚙ Settings.');
     if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec\b/.test(gasUrl)) {
@@ -1882,16 +1943,24 @@ async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict, uploadI
     }
     // conflict: '' = check first (server reports if the name already exists),
     //           'overwrite' = replace it, 'rename' = save a numbered copy "name (2).pdf".
-    // orderNo/customer let the server number same-day repeats of the same product
-    // ("2nd Order") and recognise a re-upload of an order it already holds.
-    const payload   = JSON.stringify({
-        filename, pdfBase64, folderDate,
-        conflict: conflict || '',
-        uploadId: uploadId || '',
+    // identity (baseName/orderNo/customer/fileHash) lets the server number same-day
+    // repeats of the same product ("2nd Order") and recognise an order it already holds.
+    // Defaults to the form's current order so the single-file path needs no argument;
+    // the batch queue passes each item's own identity instead.
+    const id = identity || {
         baseName: buildBaseName(),
         orderNo:  (state.order && state.order.orderNo)   || '',
         customer: (state.order && state.order.customer)  || '',
         fileHash: state.fileHash || ''
+    };
+    const payload   = JSON.stringify({
+        filename, pdfBase64, folderDate,
+        conflict: conflict || '',
+        uploadId: uploadId || '',
+        baseName: id.baseName || '',
+        orderNo:  id.orderNo  || '',
+        customer: id.customer || '',
+        fileHash: id.fileHash || ''
     });
 
     let response;
@@ -1920,10 +1989,10 @@ async function uploadToGDrive(pdfBuffer, filename, folderDate, conflict, uploadI
                     filename, pdfBase64, folderDate,
                     conflict: conflict || 'rename',
                     uploadId: uploadId || '',
-                    baseName: buildBaseName(),
-                    orderNo:  (state.order && state.order.orderNo)  || '',
-                    customer: (state.order && state.order.customer) || '',
-                    fileHash: state.fileHash || ''
+                    baseName: id.baseName || '',
+                    orderNo:  id.orderNo  || '',
+                    customer: id.customer || '',
+                    fileHash: id.fileHash || ''
                 })
             });
             return { success: true, opaque: true };
@@ -3715,47 +3784,73 @@ function sanitizeFileName(name) {
     return name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '').trim();
 }
 
-// The filename WITHOUT the "2nd Order" suffix and without ".pdf". This is the key the
-// Drive lookup groups by: same base name in the same day-folder = same product, same day.
-function buildBaseName() {
-    const plat = platform.value || 'Platform';
-    const invDateLong = formatDateLong(invoiceDate.value);
-    const pickShort = formatDateShort(pickupDate.value);
-    const pickLong = formatDateLong(pickupDate.value);
+/**
+ * The filename WITHOUT the "2nd Order" suffix and without ".pdf" — the key the Drive
+ * lookup groups by (same base name in the same day-folder = same product, same day).
+ *
+ * Takes a plain description of the document rather than reading the form, so the batch
+ * queue names its files through exactly the same code as the single-file form. There is
+ * one naming rule in this app, and this is it.
+ */
+function baseNameFrom(d) {
+    const plat = d.platform || 'Platform';
+    const invDateLong = formatDateLong(d.invoiceDate);
+    const pickShort = formatDateShort(d.pickupDate);
+    const pickLong = formatDateLong(d.pickupDate);
 
     let name;
 
-    if (state.docType === 'manifest') {
+    if (d.docType === 'manifest') {
         // "Amazon Manifest 5 Orders 23 May 2026"
-        const orders = parseInt(orderCount.value, 10) || 1;
+        const orders = parseInt(d.orders, 10) || 1;
         name = plat + ' Manifest ' + orders + ' Orders ' + (invDateLong || pickLong);
 
-    } else if (state.isMultiOrder) {
+    } else if (d.isMultiOrder) {
         // Multi-order invoice (one invoice per PDF page, e.g. Meesho Sub_Order_Labels)
         // productName already contains "Coir Brush 2 Qty, Tamarind Seed Remover 2 Qty"
         // quantity contains total number of orders
         // Format: "Meesho Coir Brush 2 Qty, Tamarind Seed Remover 2 Qty, 27 May 2026 D 27 May Total 2 Orders"
-        const prod = (productName.value || 'Product').trim();
-        const totalOrders = parseInt(quantity.value, 10) || state.multiOrders.length || 1;
+        const prod = (d.product || 'Product').trim();
+        const totalOrders = parseInt(d.qty, 10) || 1;
         name = plat + ' ' + prod + ', ' + invDateLong + ' D ' + pickShort + ' Total ' + totalOrders + ' Orders';
 
     } else {
         // Single-order invoice / label
         // "Amazon Coir Brush 6 Qty 23 May 2026 D 23 May"
-        const prod = (productName.value || 'Product').trim();
-        const qty = parseInt(quantity.value, 10) || 1;
+        const prod = (d.product || 'Product').trim();
+        const qty = parseInt(d.qty, 10) || 1;
         name = plat + ' ' + prod + ' ' + qty + ' Qty ' + invDateLong + ' D ' + pickShort;
     }
 
     return sanitizeFileName(name);
 }
 
+/** The form's current state, in the shape baseNameFrom() expects. */
+function formDoc() {
+    return {
+        platform:     platform.value,
+        docType:      state.docType,
+        isMultiOrder: state.isMultiOrder,
+        product:      productName.value,
+        qty:          quantity.value,
+        orders:       orderCount.value,
+        invoiceDate:  invoiceDate.value,
+        pickupDate:   pickupDate.value
+    };
+}
+
+function buildBaseName() {
+    return baseNameFrom(formDoc());
+}
+
+/** base + " 2nd Order" + ".pdf". Manifests are not orders, so they never get a number. */
+function nameWithOrdinal(base, docType, ordinal) {
+    const ord = (docType === 'manifest') ? 1 : (parseInt(ordinal, 10) || 1);
+    return base + (ord >= 2 ? ' ' + ordinalWord(ord) + ' Order' : '') + '.pdf';
+}
+
 function buildFileName() {
-    const base = buildBaseName();
-    // A manifest isn't an order, so it never gets an ordinal.
-    const ord = (state.docType === 'manifest') ? 1 : (state.ordinal || 1);
-    const suffix = (ord >= 2) ? ' ' + ordinalWord(ord) + ' Order' : '';
-    return base + suffix + '.pdf';
+    return nameWithOrdinal(buildBaseName(), state.docType, state.ordinal);
 }
 
 function updatePreview() {
@@ -3837,10 +3932,392 @@ pickupDate.addEventListener('input', () => {
     updatePreview();
 });
 
+// =================== BATCH QUEUE (2+ PDFs) ===================
+// One PDF keeps the original single-file form untouched. Two or more switch to this
+// queue: every file is parsed and named up front, you review the names, and only then
+// does anything go to Drive.
+
+const batch = {
+    items:    [],       // [{id, file, srcName, buffer, doc, order, fileHash, base, ordinal, outName, status, note}]
+    busy:     false,
+    defaults: { pickup: '' }
+};
+
+/** "…D 15 Jul 2nd Order" → "…D 15 Jul". Mirrors stripOrdinal() in the Apps Script. */
+function stripOrdinalName(base) {
+    return String(base).replace(/\s+\d+(?:st|nd|rd|th)\s+Order$/i, '').trim();
+}
+function dropPdfExt(name) {
+    return String(name).replace(/\.pdf$/i, '');
+}
+
+/**
+ * Parse ONE file into a queue item. Deliberately touches no DOM: it runs the same
+ * detectors as the single-file path but returns a plain object, so the two paths can
+ * never drift into naming a file differently.
+ */
+async function analyzeFile(file, index) {
+    const item = {
+        id: 'b' + index + '-' + (file.name || '').slice(0, 40),
+        file, srcName: file.name || ('file ' + (index + 1)),
+        buffer: null, order: null, fileHash: '',
+        base: '', ordinal: 1, outName: '', sameOrder: false,
+        status: 'parsing', note: ''
+    };
+
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        item.status = 'error'; item.note = 'Not a PDF — skipped.'; return item;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+        item.status = 'error'; item.note = 'Larger than 50 MB — skipped.'; return item;
+    }
+
+    try {
+        const raw   = await file.arrayBuffer();
+        const clone = raw.slice(0);              // pdf.js consumes `raw`; keep bytes for upload
+        item.buffer = clone;
+
+        const { fullText, pageTexts } = await extractPdfText(raw);
+
+        const docType = detectDocType(fullText);
+        const date    = extractDate(fullText) || todayStr();
+        const year    = parseInt(date.substring(0, 4), 10) || new Date().getFullYear();
+        // No ship date in the PDF → fall back to whatever Step 1 is set to, exactly
+        // like the single-file form does.
+        const pickup  = extractPickupDate(fullText, year) || batch.defaults.pickup || todayStr();
+
+        const multi   = (docType !== 'manifest') ? detectMultiOrderPages(pageTexts) : null;
+        const isMulti = !!(multi && multi.length >= 2);
+
+        let product, qty;
+        if (isMulti) {
+            product = multi.map(o => `${o.product} ${o.qty} Qty`).join(', ');
+            qty = multi.length;
+        } else {
+            product = shortenProductName(detectProductName(fullText), fullText);
+            qty = detectQuantity(fullText);
+            const cv = extractColorVariant(fullText);
+            if (cv && !product.toLowerCase().includes(cv.toLowerCase())) product = product + ' - ' + cv;
+        }
+
+        item.doc = {
+            platform:     detectPlatform(fullText, file.name),
+            docType:      docType,
+            isMultiOrder: isMulti,
+            product:      product,
+            qty:          qty,
+            orders:       detectOrderCount(fullText),
+            invoiceDate:  date,
+            pickupDate:   pickup
+        };
+        item.order    = (docType === 'manifest') ? null : extractOrderIdentity(fullText, pageTexts, isMulti);
+        item.fileHash = await computeFileHash(clone.slice(0));
+        item.base     = baseNameFrom(item.doc);
+        item.outName  = nameWithOrdinal(item.base, docType, 1);
+        item.status   = 'ready';
+    } catch (err) {
+        console.error('Batch parse failed for', file.name, err);
+        item.status = 'error';
+        item.note = 'Could not read this PDF — ' + (err.message || 'parse error');
+    }
+    return item;
+}
+
+/**
+ * Ask Drive what number each file should take.
+ *
+ * Files in the SAME group (same product + day) must be numbered against each other as
+ * well as against Drive: three new orders for one product can't all be told they are
+ * the "1st". Drive supplies the first free number for the group, then the rest of the
+ * group counts up from there. The server re-checks under its lock at save time and has
+ * the final say — these numbers are a preview.
+ */
+async function fetchBatchOrdinals() {
+    const groups = new Map();
+    for (const it of batch.items) {
+        if (it.status !== 'ready' || it.doc.docType === 'manifest') continue;
+        if (!groups.has(it.base)) groups.set(it.base, []);
+        groups.get(it.base).push(it);
+    }
+
+    for (const [base, items] of groups) {
+        let nextFree = null;
+        for (const it of items) {
+            const r = await lookupOrdinal(base, it);
+            if (r && r.sameOrder) {
+                // Already in Drive → keeps its own number and doesn't consume a slot.
+                it.ordinal  = r.ordinal;
+                it.sameOrder = true;
+                it.note = r.identical
+                    ? '♻ Already saved as <strong>' + escapeHtml(r.sameName || it.outName) + '</strong> — will be skipped, not duplicated.'
+                    : '♻ This order is already in Drive as <strong>' + escapeHtml(r.sameName || '') + '</strong> — you will be asked to replace it.';
+            } else {
+                if (nextFree === null) nextFree = (r && r.ordinal) ? r.ordinal : 1;
+                it.ordinal = nextFree++;
+                if (it.ordinal >= 2) {
+                    it.note = '🔢 ' + ordinalWord(it.ordinal) + ' order for this product today.';
+                }
+            }
+            it.outName = nameWithOrdinal(base, it.doc.docType, it.ordinal);
+            renderBatch();
+        }
+    }
+}
+
+/** One read-only ordinal lookup for a queue item. Returns null if Drive can't answer. */
+async function lookupOrdinal(base, item) {
+    const gasUrl = getGasUrl();
+    const orderNo = (item.order && item.order.orderNo) || '';
+    if (!gasUrl || (!orderNo && !item.fileHash)) return null;
+    try {
+        const res = await fetch(gasUrl, {
+            method:  'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body:    JSON.stringify({
+                type:       'ordinal',
+                baseName:   base,
+                folderDate: inputDateToFolderDate(item.doc.pickupDate || item.doc.invoiceDate),
+                orderNo:    orderNo,
+                fileHash:   item.fileHash
+            }),
+            redirect: 'follow'
+        });
+        const txt = (await res.text()).trim();
+        if (txt.startsWith('<')) return null;
+        const data = JSON.parse(txt);
+        return data.success ? data : null;
+    } catch (err) {
+        console.warn('Batch ordinal lookup failed:', err);
+        return null;
+    }
+}
+
+function batchStatusIcon(s) {
+    return { parsing:'⟳', ready:'', uploading:'⟳', done:'✓', skipped:'–', error:'✕' }[s] || '';
+}
+
+function renderBatch() {
+    const ok = batch.items.filter(i => i.status !== 'error');
+    batchTitle.textContent = 'Review ' + batch.items.length + ' file' + (batch.items.length === 1 ? '' : 's');
+    batchSubtitle.textContent = batch.busy
+        ? 'Working… please keep this tab open.'
+        : 'Check the new names below — nothing is sent until you press a button. Names are editable.';
+
+    batchList.innerHTML = batch.items.map((it, i) => {
+        const cls = it.status === 'done' ? 'is-done'
+                  : it.status === 'error' ? 'is-error'
+                  : it.status === 'uploading' ? 'is-active' : '';
+        const icon = batchStatusIcon(it.status);
+        const who = it.order && it.order.customer ? ' · ' + escapeHtml(it.order.customer) : '';
+        const noteColor = it.status === 'error' ? 'var(--btn-danger)'
+                        : it.sameOrder ? '#3b82f6'
+                        : it.ordinal >= 2 ? '#f59e0b' : 'var(--text-muted)';
+        return `<div class="batch-row ${cls}">
+            <div class="batch-src">${icon ? icon + ' ' : ''}${escapeHtml(it.srcName)}${who}</div>
+            ${it.status === 'error'
+                ? ''
+                : `<input class="batch-name" type="text" data-idx="${i}" value="${escapeHtml(it.outName)}"
+                     ${it.status === 'done' || batch.busy ? 'readonly' : ''}>`}
+            ${it.note ? `<div class="batch-note" style="color:${noteColor}">${it.note}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    // Editing a name re-groups it under a different base, so the server will count it
+    // against that product instead. Kept as a plain listener — rows are re-rendered.
+    batchList.querySelectorAll('.batch-name').forEach(inp => {
+        inp.addEventListener('change', e => {
+            const it = batch.items[parseInt(e.target.dataset.idx, 10)];
+            if (!it) return;
+            let v = e.target.value.trim();
+            if (!/\.pdf$/i.test(v)) v += '.pdf';
+            it.outName = sanitizeFileName(dropPdfExt(v)) + '.pdf';
+            it.base = stripOrdinalName(dropPdfExt(it.outName));
+            e.target.value = it.outName;
+        });
+    });
+
+    const canAct = !batch.busy && ok.some(i => i.status === 'ready');
+    batchDownloadBtn.disabled = !canAct;
+    batchDriveBtn.disabled    = !canAct;
+}
+
+function setBatchStatus(html, type) {
+    batchStatus.innerHTML = html;
+    batchStatus.className = 'drive-status show' + (type ? ' ' + type : '');
+}
+
+/** Show the queue and hide the single-file form (and vice-versa). */
+function showBatchMode(on) {
+    batchPanel.style.display = on ? 'block' : 'none';
+    detailsPanel.style.display = on ? 'none' : '';
+    filenamePreview.style.display = on ? 'none' : filenamePreview.style.display;
+    document.querySelector('.action-buttons').style.display = on ? 'none' : '';
+    driveStatus.style.display = on ? 'none' : '';
+}
+
+async function startBatch(files) {
+    batch.items = [];
+    batch.busy = true;
+    batch.defaults.pickup = pickupDate.value || todayStr();
+    showBatchMode(true);
+    hideStatus();
+    setBatchStatus('⟳ Reading ' + files.length + ' PDFs…', '');
+    renderBatch();
+
+    for (let i = 0; i < files.length; i++) {
+        setBatchStatus(`⟳ Reading ${i + 1} of ${files.length}…`, '');
+        batch.items.push(await analyzeFile(files[i], i));
+        renderBatch();
+    }
+
+    // Same PDF picked twice in one go — keep the first, skip the rest.
+    const seen = new Set();
+    for (const it of batch.items) {
+        if (it.status !== 'ready' || !it.fileHash) continue;
+        if (seen.has(it.fileHash)) {
+            it.status = 'skipped';
+            it.note = '– Identical to an earlier file in this batch — skipped.';
+        } else {
+            seen.add(it.fileHash);
+        }
+    }
+
+    batch.busy = false;
+    renderBatch();
+
+    const bad = batch.items.filter(i => i.status === 'error').length;
+    setBatchStatus(`✓ Read ${batch.items.length - bad} of ${batch.items.length} files. Review the names, then send.`,
+                   bad ? 'error' : 'success');
+
+    if (getGasUrl()) {
+        setBatchStatus('⟳ Checking Drive for earlier orders of these products today…', '');
+        await fetchBatchOrdinals();
+        setBatchStatus('✓ Ready. Review the names, then Download all or Send all to GDrive.', 'success');
+    }
+    renderBatch();
+}
+
+batchDownloadBtn.addEventListener('click', async () => {
+    batch.busy = true; renderBatch();
+    let n = 0;
+    for (const it of batch.items) {
+        if (it.status !== 'ready') continue;
+        try {
+            const bytes = await it.file.arrayBuffer();
+            const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+            const a = document.createElement('a');
+            a.href = url; a.download = it.outName; a.style.display = 'none';
+            document.body.appendChild(a); a.click();
+            setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+            n++;
+            // Browsers throttle a burst of downloads; space them out slightly.
+            await new Promise(r => setTimeout(r, 350));
+        } catch (err) {
+            it.status = 'error'; it.note = 'Download failed — ' + err.message;
+        }
+    }
+    batch.busy = false; renderBatch();
+    setBatchStatus(`✓ Downloaded ${n} file${n === 1 ? '' : 's'}. Your browser may ask to allow multiple downloads.`, 'success');
+});
+
+batchDriveBtn.addEventListener('click', async () => {
+    if (!getGasUrl()) {
+        setBatchStatus('Google Drive isn\'t set up on this device yet — add the Apps Script <strong>/exec</strong> URL in ⚙ Settings.', 'error');
+        $('settingsBtn').click();
+        return;
+    }
+    batch.busy = true; renderBatch();
+
+    let done = 0, skipped = 0, failed = 0;
+    for (const it of batch.items) {
+        if (it.status !== 'ready') continue;
+        it.status = 'uploading'; renderBatch();
+
+        const base       = stripOrdinalName(dropPdfExt(it.outName));
+        const folderDate = inputDateToFolderDate(it.doc.pickupDate || it.doc.invoiceDate);
+        const identity   = {
+            baseName: base,
+            orderNo:  (it.order && it.order.orderNo)  || '',
+            customer: (it.order && it.order.customer) || '',
+            fileHash: it.fileHash
+        };
+        const uploadId = (self.crypto && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : 'u' + Date.now() + '-' + Math.random().toString(36).slice(2);
+
+        try {
+            const bytes = await it.file.arrayBuffer();
+            let res = await uploadToGDrive(bytes, it.outName, folderDate, '', uploadId, identity);
+
+            if (res.conflict) {
+                const choice = await askConflict(res);
+                if (!choice) {
+                    it.status = 'skipped'; it.note = '– Skipped (you cancelled).';
+                    skipped++; renderBatch(); continue;
+                }
+                res = await uploadToGDrive(bytes, it.outName, folderDate, choice, uploadId, identity);
+            }
+
+            if (res.identical) {
+                it.status = 'done'; skipped++;
+                it.outName = res.filename || it.outName;
+                it.note = '♻ Already in Drive as <strong>' + escapeHtml(it.outName) + '</strong> — not duplicated.';
+            } else if (res.opaque) {
+                it.status = 'done'; done++;
+                it.note = '⚠ Sent, but the browser blocked the confirmation — check the folder.';
+            } else if (res.success) {
+                it.status = 'done'; done++;
+                it.outName = res.filename || it.outName;
+                it.note = '✓ Saved as <strong>' + escapeHtml(it.outName) + '</strong>' +
+                          (res.replaced > 0 ? ' (replaced the old copy)' : '');
+            } else {
+                throw new Error(res.error || 'upload rejected');
+            }
+        } catch (err) {
+            console.error('Batch upload failed for', it.srcName, err);
+            it.status = 'error'; it.note = '✕ Failed — ' + err.message;
+            failed++;
+        }
+        renderBatch();
+    }
+
+    batch.busy = false; renderBatch();
+    const parts = [];
+    if (done)    parts.push(`saved ${done}`);
+    if (skipped) parts.push(`skipped ${skipped} already-saved`);
+    if (failed)  parts.push(`${failed} failed`);
+    setBatchStatus((failed ? '⚠ ' : '✓ ') + 'Batch finished — ' + (parts.join(' · ') || 'nothing to do') + '.',
+                   failed ? 'error' : 'success');
+});
+
+batchClearBtn.addEventListener('click', () => {
+    if (batch.busy) return;
+    if (!confirm('Clear all files from the queue?')) return;
+    batch.items = [];
+    fileInput.value = '';
+    showBatchMode(false);
+    batchStatus.className = 'drive-status';
+    hideStatus();
+    showStatus('✓ All cleared.', 'success');
+});
+
+/** Entry point for both the file picker and drag-drop. */
+function handleFiles(fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    if (files.length === 1) {
+        showBatchMode(false);
+        batch.items = [];
+        processFile(files[0]);
+    } else {
+        startBatch(files);
+    }
+}
+
 // =================== UPLOAD ZONE ===================
 fileInput.addEventListener('change', (e) => {
-    if (e.target.files && e.target.files[0]) {
-        processFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length) {
+        handleFiles(e.target.files);
     }
 });
 
@@ -3862,8 +4339,8 @@ fileInput.addEventListener('change', (e) => {
 
 uploadZone.addEventListener('drop', (e) => {
     e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-        processFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        handleFiles(e.dataTransfer.files);
     }
 });
 
