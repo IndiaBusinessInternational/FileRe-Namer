@@ -1,5 +1,5 @@
 /**
- * IBI File Re-Namer — Google Drive Upload Endpoint  (v8 — re-upload = replace, not "2nd Order")
+ * IBI File Re-Namer — Google Drive Upload Endpoint  (v9 — cross-folder duplicate check)
  * Google Apps Script (GAS) Web App
  *
  * ══════════════════════════════════════════════════════════════════════
@@ -7,6 +7,24 @@
  *     Deploy ▸ Manage deployments ▸ (pencil ✏️) ▸ Version: New version ▸ Deploy
  *     Otherwise Google keeps running the OLD code.
  * ══════════════════════════════════════════════════════════════════════
+ *
+ *  WHAT'S NEW IN v9:
+ *   • CROSS-FOLDER DUPLICATE CHECK. Everything before this only ever looked inside the
+ *     ONE day-folder an upload was heading for, so an order filed under
+ *     "Orders 14 July 2026" was invisible when the same label was processed on the
+ *     15th — and quietly got saved a second time. findElsewhere() now searches the
+ *     whole "IBI Daily Orders" tree and reports WHICH date folder already holds it,
+ *     both in the review list and as a prompt on upload.
+ *
+ *     It searches Drive's full-text index on the ORDER NUMBER, which covers a file's
+ *     description (where v8+ stamps it) AND the text inside the PDF itself — so it
+ *     finds orders saved long before any of this stamping existed.
+ *
+ *     It searches the FULL order number ("…368_1") and never falls back to the number
+ *     without its sub-order suffix: that would match sibling sub-orders, which are
+ *     different orders, and a false "already saved" warning is worse than none.
+ *     Read-only, and returns [] on any error — a duplicate warning must never be able
+ *     to fail an upload.
  *
  *  WHAT'S NEW IN v8 (fixes two v7 bugs):
  *   • RE-UPLOADING THE SAME ORDER NO LONGER BECOMES "2nd Order". v7 could only
@@ -162,6 +180,25 @@ function doPost(e) {
           return ContentService.createTextOutput(out0).setMimeType(ContentService.MimeType.JSON);
         }
 
+        // Already filed under a DIFFERENT day → stop and say where, rather than quietly
+        // filing a second copy under today. 'rename' means the user saw this and chose
+        // to keep both anyway.
+        if (conflict !== 'overwrite' && conflict !== 'rename') {
+          const away = findElsewhere(orderNo, 'Orders ' + folderDate);
+          if (away.length > 0 && scan.matches.length === 0) {
+            return json({
+              success:      false,
+              conflict:     true,
+              elsewhere:    away,
+              filename:     away[0].name,
+              folder:       away[0].folder,
+              existingUrl:  away[0].url,
+              orderNo:      orderNo,
+              suggestedName: baseName + ordinalSuffix(scan.next) + '.pdf'
+            });
+          }
+        }
+
         // Same order, different bytes (e.g. the label was re-downloaded) → ask.
         if (scan.matches.length > 0 && conflict !== 'overwrite' && conflict !== 'rename') {
           return json({
@@ -288,7 +325,7 @@ function doPost(e) {
 function doGet() {
   return json({
     status: 'active', rootFolder: ROOT_FOLDER_NAME, keepDays: KEEP_DAYS,
-    version: 8, conflictPrompt: true, idempotent: true, orderNumbering: true, hashIdentity: true
+    version: 9, conflictPrompt: true, idempotent: true, orderNumbering: true, hashIdentity: true, crossFolderDuplicateCheck: true
   });
 }
 
@@ -310,8 +347,14 @@ function handleOrdinalLookup(body) {
   const parent = getFolderOrNull(root, ROOT_FOLDER_NAME);
   if (!parent) return json({ success: true, ordinal: 1, reason: 'no root folder yet' });
 
+  // Was this order already filed under a DIFFERENT day? Checked even when today's
+  // folder doesn't exist yet — that is exactly the case where a duplicate slips in.
+  const elsewhere = findElsewhere(orderNo, 'Orders ' + folderDate);
+
   const dateFolder = getFolderOrNull(parent, 'Orders ' + folderDate);
-  if (!dateFolder) return json({ success: true, ordinal: 1, reason: 'no folder for that day yet' });
+  if (!dateFolder) {
+    return json({ success: true, ordinal: 1, elsewhere: elsewhere, reason: 'no folder for that day yet' });
+  }
 
   const scan = scanOrders(dateFolder, baseName, orderNo, fileHash);
   const same = scan.matches.length > 0;
@@ -323,8 +366,83 @@ function handleOrdinalLookup(body) {
     sameName:  same ? scan.matches[0].file.getName() : '',
     identical: !!firstIdentical(scan.matches),
     unknown:   scan.unknowns.length,
+    elsewhere: elsewhere,
     folder:    'Orders ' + folderDate
   });
+}
+
+/**
+ * Has this order already been saved on ANOTHER day?
+ *
+ * The per-day scan only ever looks in the folder this upload is heading for, so an
+ * order saved under "Orders 14 July 2026" is invisible when the same label is
+ * processed on the 15th — and gets saved a second time. This searches the whole
+ * "IBI Daily Orders" tree instead, so the same order can be spotted whatever day it
+ * was filed under.
+ *
+ * It searches on the ORDER NUMBER because Drive's full-text index covers both a file's
+ * description (where v8 stamps the order number) AND the text inside the PDF itself.
+ * That second part matters: it finds orders saved before stamping existed, which no
+ * amount of reading our own metadata could.
+ *
+ * Read-only. Returns [] rather than throwing — a duplicate warning is a help, and must
+ * never be able to fail an upload.
+ */
+function findElsewhere(orderNo, excludeFolder) {
+  const out = [];
+  if (!orderNo) return out;
+  try {
+    const root = getFolderOrNull(DriveApp.getRootFolder(), ROOT_FOLDER_NAME);
+    if (!root) return out;
+
+    // Quote the whole order number so it's matched as one phrase. Deliberately NOT
+    // falling back to the number without its "_1" sub-order suffix: that would match
+    // sibling sub-orders, which are different orders, and a false "already saved"
+    // warning is worse than none.
+    const safe = String(orderNo).replace(/["\\]/g, '');
+    const it = DriveApp.searchFiles('fullText contains "' + safe + '" and trashed = false');
+
+    let guard = 0;
+    while (it.hasNext() && guard++ < 40) {
+      const f = it.next();
+      const folderName = locateInOrders(f, root);
+      if (!folderName) continue;                 // outside IBI Daily Orders — not ours
+      if (folderName === excludeFolder) continue; // today's folder is scanned precisely elsewhere
+
+      // Prefer a stamped order number: it's exact. An unstamped hit is reported too
+      // (Drive found this order number inside the PDF), just flagged as less certain.
+      const info = readFileInfo(f);
+      if (info && info.orderNo && info.orderNo !== orderNo) continue;   // stamped as a DIFFERENT order
+      out.push({
+        name:   f.getName(),
+        folder: folderName,
+        url:    'https://drive.google.com/file/d/' + f.getId() + '/view',
+        exact:  !!(info && info.orderNo === orderNo)
+      });
+    }
+  } catch (err) {
+    // Search is unavailable or the query was rejected — degrade to "no warning".
+    return out;
+  }
+  return out;
+}
+
+/**
+ * If `file` sits directly in an "Orders <date>" folder inside the root, return that
+ * folder's name; otherwise null. Keeps the search from reporting unrelated copies of
+ * a label that happen to live elsewhere in the user's Drive.
+ */
+function locateInOrders(file, root) {
+  const parents = file.getParents();
+  while (parents.hasNext()) {
+    const p = parents.next();
+    if (!/^Orders\s+/.test(p.getName())) continue;
+    const grands = p.getParents();
+    while (grands.hasNext()) {
+      if (grands.next().getId() === root.getId()) return p.getName();
+    }
+  }
+  return null;
 }
 
 /** The first provably byte-identical match, or null. */

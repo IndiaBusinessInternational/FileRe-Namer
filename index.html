@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v3.8</title>
+    <title>IBI File Re-Namer v3.9</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -549,6 +549,20 @@
         .batch-row.is-done   { border-color: var(--btn-success); background: rgba(16,185,129,0.07); }
         .batch-row.is-error  { border-color: var(--btn-danger);  background: rgba(239,68,68,0.07); }
         .batch-row.is-active { border-color: var(--accent-color); background: var(--accent-soft); }
+        .batch-row.is-dupe { border-color: var(--btn-danger); border-width: 1.5px; background: rgba(239,68,68,0.06); }
+        .batch-anyway {
+            display: flex; align-items: center; gap: 7px;
+            margin-top: 8px; font-size: 11px; color: var(--text-muted); cursor: pointer;
+        }
+        .batch-anyway input { width: 14px; height: 14px; cursor: pointer; }
+        .batch-dupe-warn {
+            border: 1.5px solid var(--btn-danger);
+            background: rgba(239,68,68,0.08);
+            color: var(--text-main);
+            border-radius: var(--radius-md);
+            padding: 11px 13px; margin-bottom: 11px;
+            font-size: 12px; line-height: 1.55;
+        }
         .batch-src {
             font-size: 11px;
             color: var(--text-soft);
@@ -1027,7 +1041,7 @@
 
     <!-- ============== TOP BAR ============== -->
     <header class="top-bar">
-        <span class="version-tag">v3.8</span>
+        <span class="version-tag">v3.9</span>
         <div style="display:flex;align-items:center;gap:0;">
             <button class="settings-btn" id="settingsBtn" title="Gemini AI Settings">
                 <span id="settingsIcon">⚙</span> AI Key
@@ -1186,6 +1200,7 @@
                     <p id="batchSubtitle">Check the new names, then send them all.</p>
                 </div>
                 <div class="card-body">
+                    <div id="batchDupeWarn" class="batch-dupe-warn" style="display:none;"></div>
                     <div id="batchList"></div>
                     <div class="batch-actions">
                         <button class="btn btn-primary" id="batchDownloadBtn" disabled>⬇ Download all</button>
@@ -1223,7 +1238,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.8</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v3.9</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1331,12 +1346,12 @@
     <!-- ============== DUPLICATE FILENAME MODAL ============== -->
     <div class="modal-overlay" id="conflictOverlay">
         <div class="settings-modal" style="max-width:430px;">
-            <h3>⚠ This file already exists</h3>
+            <h3 id="conflictTitle">⚠ This file already exists</h3>
             <p class="modal-subtitle" id="conflictMsg"></p>
             <div class="conflict-actions">
-                <button class="conflict-btn conflict-overwrite" id="conflictOverwriteBtn">Overwrite<small>Replace the existing file</small></button>
-                <button class="conflict-btn conflict-rename" id="conflictRenameBtn">Rename — keep both<small id="conflictRenameHint">Save as a numbered copy</small></button>
-                <button class="conflict-btn conflict-cancel" id="conflictCancelBtn">Cancel</button>
+                <button class="conflict-btn conflict-overwrite" id="conflictOverwriteBtn">Overwrite<small id="conflictOverwriteHint">Replace the existing file</small></button>
+                <button class="conflict-btn conflict-rename" id="conflictRenameBtn"><span id="conflictRenameLabel">Rename — keep both</span><small id="conflictRenameHint">Save as a numbered copy</small></button>
+                <button class="conflict-btn conflict-cancel" id="conflictCancelBtn"><span id="conflictCancelLabel">Cancel</span></button>
             </div>
         </div>
     </div>
@@ -1367,7 +1382,8 @@ const state = {
     fileHash: '',          // SHA-256 of the PDF bytes — the other half of the identity
     ordinal: 1,            // 1 = first order of its kind today; 2+ appends "2nd Order" to the filename
     ordinalState: 'idle',  // 'idle' | 'checking' | 'ok' | 'same' | 'offline' | 'nokey'
-    sameAs: ''             // filename this order is already saved under, when ordinalState==='same'
+    sameAs: '',            // filename this order is already saved under, when ordinalState==='same'
+    elsewhere: []          // [{folder,name,url}] — this order already filed under ANOTHER day
 };
 
 // ----- DOM refs -----
@@ -1411,6 +1427,7 @@ const batchDownloadBtn = $('batchDownloadBtn');
 const batchDriveBtn    = $('batchDriveBtn');
 const batchClearBtn    = $('batchClearBtn');
 const batchStatus      = $('batchStatus');
+const batchDupeWarn    = $('batchDupeWarn');
 const downloadBtn = $('downloadBtn');
 const driveBtn    = $('driveBtn');
 const clearBtn    = $('clearBtn');
@@ -2123,6 +2140,10 @@ async function fetchOrdinal() {
         // (never becomes "2nd Order") — uploading will offer to replace it.
         state.ordinalState = data.sameOrder ? 'same' : 'ok';
         state.sameAs = data.sameOrder ? (data.sameName || '') : '';
+        // elsewhere = already filed under another day. Outranks everything else on
+        // screen: it's the one that silently creates a duplicate across folders.
+        state.elsewhere = data.elsewhere || [];
+        if (state.elsewhere.length) state.ordinalState = 'elsewhere';
     } catch (err) {
         if (seq !== ordinalSeq) return;
         // An older GAS deployment (no 'ordinal' action) lands here too — degrade to
@@ -2257,10 +2278,46 @@ function setDriveStatus(html, type) {
 function askConflict(info) {
     return new Promise(resolve => {
         const overlay = $('conflictOverlay');
+        const ow = $('conflictOverwriteBtn'), rn = $('conflictRenameBtn'), cn = $('conflictCancelBtn');
+        const armConflictButtons = () => {
+            const done = (val) => {
+                overlay.classList.remove('open');
+                ow.onclick = rn.onclick = cn.onclick = overlay.onclick = null;
+                resolve(val);
+            };
+            ow.onclick = () => done('overwrite');
+            rn.onclick = () => done('rename');
+            cn.onclick = () => done(null);
+            overlay.onclick = (e) => { if (e.target === overlay) done(null); };
+            overlay.classList.add('open');
+        };
+
         // sameOrder = the server matched this PDF's order number to a file already in
         // the folder, so this is a re-upload of the SAME order, not a new one. Say so —
         // "the filename exists" would be misleading when a different order just gets
         // the next number automatically and never prompts at all.
+        // elsewhere = this order is already filed under a DIFFERENT day's folder. There is
+        // nothing in today's folder to overwrite, so "Overwrite" would be meaningless —
+        // the real choice is skip it or file a second copy anyway. Re-label accordingly.
+        const away = info.elsewhere && info.elsewhere.length ? info.elsewhere : null;
+        $('conflictTitle').textContent = away ? '⚠ This order is already saved' : '⚠ This file already exists';
+        $('conflictOverwriteBtn').style.display = away ? 'none' : '';
+        $('conflictRenameLabel').textContent = away ? 'Save anyway' : 'Rename — keep both';
+        $('conflictCancelLabel').textContent = away ? 'Skip this order' : 'Cancel';
+
+        if (away) {
+            const list = away.map(a =>
+                `<li><strong>${escapeHtml(a.folder)}</strong> — ${escapeHtml(a.name)}` +
+                (a.exact ? '' : ' <em>(matched on the order number printed in the PDF)</em>') +
+                `${a.url ? ` · <a href="${a.url}" target="_blank">open</a>` : ''}</li>`).join('');
+            $('conflictMsg').innerHTML =
+                `Order <strong>${escapeHtml(info.orderNo || '')}</strong> has already been saved ` +
+                `on a different date:<ul style="margin:8px 0 0 18px;line-height:1.6;">${list}</ul>` +
+                `<br>Saving it again would put a second copy under <strong>${escapeHtml(info.folder || '')}</strong>.`;
+            $('conflictRenameHint').textContent = 'Save a second copy under today anyway';
+            return armConflictButtons();
+        }
+
         // unidentified = a file saved before v8 shares this product+day, so its order
         // number can't be read and we can't prove whether it's this same order. Saying
         // "already exists" would be a guess in either direction — spell out the doubt.
@@ -2277,20 +2334,11 @@ function askConflict(info) {
               `, but this PDF isn't identical to it (the label was probably re-downloaded).`
             : `<strong>${escapeHtml(info.filename)}</strong> already exists in <strong>${info.folder}</strong>` +
               (info.existingCount > 1 ? ` (${info.existingCount} copies)` : '') + '.';
+        $('conflictOverwriteHint').textContent = 'Replace the existing file';
         $('conflictRenameHint').textContent = info.suggestedName
             ? ('Save as: ' + info.suggestedName)
             : 'Save as a numbered copy';
-        const ow = $('conflictOverwriteBtn'), rn = $('conflictRenameBtn'), cn = $('conflictCancelBtn');
-        const done = (val) => {
-            overlay.classList.remove('open');
-            ow.onclick = rn.onclick = cn.onclick = overlay.onclick = null;
-            resolve(val);
-        };
-        ow.onclick = () => done('overwrite');
-        rn.onclick = () => done('rename');
-        cn.onclick = () => done(null);
-        overlay.onclick = (e) => { if (e.target === overlay) done(null); };
-        overlay.classList.add('open');
+        armConflictButtons();
     });
 }
 function applyTheme(theme) {
@@ -3919,6 +3967,16 @@ function renderOrdinalNote() {
                   ' already in the Drive folder.' + (whoTxt ? '<br>' + whoTxt : '')
                 : '✓ First order for this product today.' + (whoTxt ? '<br>' + whoTxt : '');
             color = (state.ordinal >= 2) ? '#f59e0b' : 'var(--text-muted)'; break;
+        case 'elsewhere': {
+            const list = (state.elsewhere || []).map(a =>
+                '<li>📁 <strong>' + escapeHtml(a.folder) + '</strong> — ' + escapeHtml(a.name) +
+                (a.url ? ' · <a href="' + a.url + '" target="_blank">open</a>' : '') + '</li>').join('');
+            msg = '🚫 <strong>Already processed on another date.</strong> This order is in:' +
+                  '<ul style="margin:5px 0 0 16px;">' + list + '</ul>' +
+                  'Sending it again would file a second copy under today.' +
+                  (whoTxt ? '<br>' + whoTxt : '');
+            color = '#ef4444'; break;
+        }
         case 'same':
             // The same order, not a new one — say so plainly, because this is exactly
             // the case that must NOT turn into "2nd Order".
@@ -4188,6 +4246,21 @@ async function fetchBatchOrdinals() {
         let nextFree = null;
         for (const it of items) {
             const r = await lookupOrdinal(base, it);
+
+            // Filed under another day already → flag it loudly and take it out of the
+            // send: shipping a second copy is exactly what this check exists to stop.
+            if (r && r.elsewhere && r.elsewhere.length) {
+                it.elsewhere = r.elsewhere;
+                it.status = 'duplicate';
+                it.note = '🚫 <strong>Already processed on ' +
+                          r.elsewhere.map(a => escapeHtml(a.folder)).join(', ') + '</strong> as ' +
+                          r.elsewhere.map(a => escapeHtml(a.name) + (a.url ? ' · <a href="' + a.url + '" target="_blank">open</a>' : '')).join('; ') +
+                          '. Left out of the send — tick "Send anyway" to file a second copy.';
+                it.outName = nameWithOrdinal(base, it.doc.docType, (r.ordinal || 1));
+                renderBatch();
+                continue;
+            }
+
             if (r && r.sameOrder) {
                 // Already in Drive → keeps its own number and doesn't consume a slot.
                 it.ordinal  = r.ordinal;
@@ -4237,11 +4310,18 @@ async function lookupOrdinal(base, item) {
 }
 
 function batchStatusIcon(s) {
-    return { parsing:'⟳', ready:'', uploading:'⟳', done:'✓', skipped:'–', error:'✕' }[s] || '';
+    return { parsing:'⟳', ready:'', uploading:'⟳', done:'✓', skipped:'–', error:'✕', duplicate:'🚫' }[s] || '';
+}
+
+/**
+ * Will this item actually be sent? Ready ones always; a flagged cross-day duplicate
+ * only if it was explicitly opted back in, so the default is never a second copy.
+ */
+function isSendable(it) {
+    return it.status === 'ready' || (it.status === 'duplicate' && !!it.force);
 }
 
 function renderBatch() {
-    const ok = batch.items.filter(i => i.status !== 'error');
     batchTitle.textContent = 'Review ' + batch.items.length + ' file' + (batch.items.length === 1 ? '' : 's');
     batchSubtitle.textContent = batch.busy
         ? 'Working… please keep this tab open.'
@@ -4250,10 +4330,11 @@ function renderBatch() {
     batchList.innerHTML = batch.items.map((it, i) => {
         const cls = it.status === 'done' ? 'is-done'
                   : it.status === 'error' ? 'is-error'
+                  : it.status === 'duplicate' ? 'is-dupe'
                   : it.status === 'uploading' ? 'is-active' : '';
         const icon = batchStatusIcon(it.status);
         const who = it.order && it.order.customer ? ' · ' + escapeHtml(it.order.customer) : '';
-        const noteColor = it.status === 'error' ? 'var(--btn-danger)'
+        const noteColor = (it.status === 'error' || it.status === 'duplicate') ? 'var(--btn-danger)'
                         : it.sameOrder ? '#3b82f6'
                         : it.ordinal >= 2 ? '#f59e0b' : 'var(--text-muted)';
         return `<div class="batch-row ${cls}">
@@ -4261,10 +4342,23 @@ function renderBatch() {
             ${it.status === 'error'
                 ? ''
                 : `<input class="batch-name" type="text" data-idx="${i}" value="${escapeHtml(it.outName)}"
-                     ${it.status === 'done' || batch.busy ? 'readonly' : ''}>`}
+                     ${it.status === 'done' || it.status === 'duplicate' || batch.busy ? 'readonly' : ''}>`}
             ${it.note ? `<div class="batch-note" style="color:${noteColor}">${it.note}</div>` : ''}
+            ${it.status === 'duplicate' && !batch.busy
+                ? `<label class="batch-anyway"><input type="checkbox" class="batch-force" data-idx="${i}"
+                     ${it.force ? 'checked' : ''}> Send anyway — file a second copy under today</label>`
+                : ''}
         </div>`;
     }).join('');
+
+    // Opting a flagged duplicate back into the send.
+    batchList.querySelectorAll('.batch-force').forEach(cb => {
+        cb.addEventListener('change', e => {
+            const it = batch.items[parseInt(e.target.dataset.idx, 10)];
+            if (it) it.force = e.target.checked;
+            renderBatch();
+        });
+    });
 
     // Editing a name re-groups it under a different base, so the server will count it
     // against that product instead. Kept as a plain listener — rows are re-rendered.
@@ -4280,9 +4374,16 @@ function renderBatch() {
         });
     });
 
-    const canAct = !batch.busy && ok.some(i => i.status === 'ready');
+    const canAct = !batch.busy && batch.items.some(isSendable);
     batchDownloadBtn.disabled = !canAct;
     batchDriveBtn.disabled    = !canAct;
+
+    const dupes = batch.items.filter(i => i.status === 'duplicate' && !i.force).length;
+    batchDupeWarn.innerHTML = dupes
+        ? `🚫 <strong>${dupes} order${dupes === 1 ? '' : 's'} already processed on an earlier date</strong> ` +
+          `and will be left out, so you don't ship a duplicate. Tick "Send anyway" on any you really want filed again.`
+        : '';
+    batchDupeWarn.style.display = dupes ? 'block' : 'none';
 }
 
 function setBatchStatus(html, type) {
@@ -4362,7 +4463,7 @@ batchDownloadBtn.addEventListener('click', async () => {
     batch.busy = true; renderBatch();
     let n = 0;
     for (const it of batch.items) {
-        if (it.status !== 'ready') continue;
+        if (!isSendable(it)) continue;
         try {
             const bytes = await itemBytes(it);
             const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
@@ -4391,7 +4492,10 @@ batchDriveBtn.addEventListener('click', async () => {
 
     let done = 0, skipped = 0, failed = 0;
     for (const it of batch.items) {
-        if (it.status !== 'ready') continue;
+        if (!isSendable(it)) continue;
+        // An opted-in duplicate has already been shown where it lives, so go straight
+        // to "keep both" rather than re-prompting for the answer we just got.
+        const initialConflict = (it.status === 'duplicate' && it.force) ? 'rename' : '';
         it.status = 'uploading'; renderBatch();
 
         const base       = stripOrdinalName(dropPdfExt(it.outName));
@@ -4408,7 +4512,7 @@ batchDriveBtn.addEventListener('click', async () => {
 
         try {
             const bytes = await itemBytes(it);
-            let res = await uploadToGDrive(bytes, it.outName, folderDate, '', uploadId, identity);
+            let res = await uploadToGDrive(bytes, it.outName, folderDate, initialConflict, uploadId, identity);
 
             if (res.conflict) {
                 const choice = await askConflict(res);
@@ -4443,10 +4547,12 @@ batchDriveBtn.addEventListener('click', async () => {
     }
 
     batch.busy = false; renderBatch();
+    const dupesLeft = batch.items.filter(i => i.status === 'duplicate' && !i.force).length;
     const parts = [];
-    if (done)    parts.push(`saved ${done}`);
-    if (skipped) parts.push(`skipped ${skipped} already-saved`);
-    if (failed)  parts.push(`${failed} failed`);
+    if (done)       parts.push(`saved ${done}`);
+    if (skipped)    parts.push(`skipped ${skipped} already-saved`);
+    if (dupesLeft)  parts.push(`left out ${dupesLeft} already processed on an earlier date`);
+    if (failed)     parts.push(`${failed} failed`);
     setBatchStatus((failed ? '⚠ ' : '✓ ') + 'Batch finished — ' + (parts.join(' · ') || 'nothing to do') + '.',
                    failed ? 'error' : 'success');
 });
@@ -4582,6 +4688,7 @@ clearBtn.addEventListener('click', () => {
     state.ordinal = 1;
     state.ordinalState = 'idle';
     state.sameAs = '';
+    state.elsewhere = [];
     ordinalSeq++;                        // cancel any in-flight ordinal lookup
     clearTimeout(ordinalTimer);
     ordinalNote.style.display = 'none';
