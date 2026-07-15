@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.2">v4.2</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.3">v4.3</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.2</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.3</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -3564,14 +3564,61 @@ function detectMultiOrderPages(pageTexts) {
 }
 
 // =================== PDF PROCESSING ===================
+
+/* Every glyph the page DRAWS, including anything the page box crops away.
+   Used only to recover text a label-only export hides — see extractPdfText. */
+async function pageTextFromOps(page) {
+    const OPS = pdfjsLib.OPS;
+    const ol = await page.getOperatorList();
+    const items = [];
+    let chars = 0;
+    for (let j = 0; j < ol.fnArray.length; j++) {
+        if (ol.fnArray[j] !== OPS.showText) continue;
+        const glyphs = ol.argsArray[j][0];
+        if (!Array.isArray(glyphs)) continue;
+        let s = '';
+        for (const g of glyphs) {
+            if (g === null || g === undefined) continue;
+            if (typeof g === 'number') { if (g < -100) s += ' '; continue; }  // TJ kerning gap
+            if (typeof g.unicode === 'string') s += g.unicode;
+        }
+        s = s.trim();
+        if (s) { items.push(s); chars += s.replace(/\s/g, '').length; }
+    }
+    return { items, chars };
+}
+
+/* Meesho "Shipping Label" downloads are LABEL-ONLY exports: Meesho lays out the
+   full A4 (label on top, tax invoice below) but sets the page box to
+   [0, 530.46, 595, 842], so only the top ~312pt — the label — is on the page.
+   The invoice is still drawn but cropped away, and the Product Details row
+   carrying the Order No. sits just inside that cropped-off strip.
+
+   getTextContent() returns only what is on the page, which is CORRECT — but it
+   leaves these files with no order number to name them by. The cropped-away
+   invoice is still in the file and belongs to the SAME shipment as the visible
+   label (same customer, same AWB), so we recover it from the draw ops when a
+   page carries materially more text than its page box shows.
+
+   Do NOT swap getTextContent out wholesale: it rebuilds word spacing from glyph
+   positions, and Flipkart labels draw ONE GLYPH PER text op ("O","D","3","3"…) —
+   only that logic reassembles "OD337371866217494100". Across 70 real labels the
+   split is absolute: 68 files at ratio exactly 1.00, the two label-only exports
+   at 3.00 and 2.97. Costs ≤ ~65ms per file. */
 async function extractPdfText(arrayBuffer) {
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const pageTexts = [];
     for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        const pageText = textContent.items.map(item => item.str).join(' ');
-        pageTexts.push(pageText);
+        let items = textContent.items.map(item => item.str);
+
+        const tcChars = items.join('').replace(/\s/g, '').length;
+        let ops = null;
+        try { ops = await pageTextFromOps(page); } catch (e) { ops = null; }
+        if (ops && ops.chars > tcChars * 1.15 + 20) items = ops.items;
+
+        pageTexts.push(items.join(' '));
     }
     const fullText = pageTexts.join('\n');
     return { fullText, pageTexts, pdf };   // pdf object kept for canvas rendering
