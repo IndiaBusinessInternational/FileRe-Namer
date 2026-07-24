@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.5</title>
+    <title>IBI File Re-Namer v4.6</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.5">v4.5</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.6">v4.6</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.5</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.6</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -2334,7 +2334,7 @@ driveBtn.addEventListener('click', async () => {
             state.ordinalState = 'same';
             state.sameAs = result.filename || '';
             updatePreview();
-            const idLink = result.fileUrl ? ` · <a href="${result.fileUrl}" target="_blank">Open file</a>` : '';
+            const idLink = driveLinks(result);
             setDriveStatus(
                 `✓ Already saved — this exact order is in <strong>IBI Daily Orders / ${result.folder}</strong> ` +
                 `as <strong>${result.filename}</strong>. Nothing was changed (no second copy).${idLink}`,
@@ -2361,8 +2361,8 @@ driveBtn.addEventListener('click', async () => {
                 state.ordinalState = 'ok';
                 updatePreview();
             }
-            const fileLink   = result.fileUrl   ? `<a href="${result.fileUrl}"   target="_blank">Open file</a>`   : '';
-            const folderLink = result.folderUrl ? `<a href="${result.folderUrl}" target="_blank">Open folder</a>` : '';
+            const fileLink   = result.fileUrl   ? `<a href="${result.fileUrl}"   target="_blank" rel="noopener">📄 Open file</a>`          : '';
+            const folderLink = result.folderUrl ? `<a href="${result.folderUrl}" target="_blank" rel="noopener">📁 Open Drive folder</a>` : '';
             const dupNote    = (result.replaced > 0) ? ` (replaced ${result.replaced} old cop${result.replaced === 1 ? 'y' : 'ies'})` : '';
             const ordNote    = (result.ordinal >= 2) ? ` · numbered <strong>${ordinalWord(result.ordinal)} Order</strong> (same product already shipped today)` : '';
             const renameNote = result.renamed ? ` · saved as <strong>${result.filename}</strong> to keep both` : '';
@@ -3410,11 +3410,54 @@ function shortenProductName(raw, fullText) {
     return result || raw;
 }
 
+// =================== MEESHO COLUMN QTY ===================
+// A Meesho sub-order label page prints the quantity twice, in a real table column,
+// and PDF.js flattens each table row into a predictable run of tokens:
+//
+//   label block:   "SKU Size Qty Color Order No.  <product…>  Free Size 2 Brown 311024977761731584_1"
+//   invoice row:   "Description HSN Qty Gross Amount …          691200 2 Rs.2412.00 Rs.0.00 …"
+//
+// Reading either run is safe in a way that scanning for "N Qty" is not, because the
+// product title itself frequently ends in "1 Qty". The "Other Charges" row prints "NA"
+// in the Qty column, so it can never be mistaken for a real quantity.
+function detectMeeshoColumnQty(t) {
+    // Only run on a page that shows a Meesho table header — the word "Meesho" itself
+    // never appears in these PDFs, so the header IS the platform fingerprint.
+    const hasInvHeader = /\bDescription\s+HSN\s+Qty\b/i.test(t);
+    const hasLblHeader = /\bSKU\s+Size\s+Qty\s+Color\s+Order\s*No/i.test(t);
+    if (!hasInvHeader && !hasLblHeader) return 0;
+
+    // Tax-invoice row: <HSN> <Qty> Rs.<gross>. HSN may carry a leading zero (06022010),
+    // so match it as digits, not as a number.
+    if (hasInvHeader) {
+        let max = 0;
+        for (const m of t.matchAll(/\b(\d{4,8})\s+(\d{1,4})\s+Rs\.?\s*[\d,]+(?:\.\d+)?/gi)) {
+            const n = parseInt(m[2], 10);
+            if (n > 0 && n < 10000 && n > max) max = n;
+        }
+        if (max) return max;
+    }
+
+    // Label row: <Size> <Qty> <Color> <OrderNo>. The order number ("3110…584_1") is the
+    // anchor — it ends the row, so counting backwards from it is unambiguous. Colour is
+    // optional because some listings leave it blank.
+    if (hasLblHeader) {
+        const m = t.match(/\b(\d{1,4})\s+(?:[A-Za-z][A-Za-z\/&' -]{1,30}?\s+)?\d{10,}_\d+\b/);
+        if (m) {
+            const n = parseInt(m[1], 10);
+            if (n > 0 && n < 10000) return n;
+        }
+    }
+
+    return 0;
+}
+
 // =================== QUANTITY EXTRACTION ===================
 // Priority order (first match wins):
 //   1. Parenthetical sum: "(Coir Brush 6 Qty) ... (Coir Brush 4 Qty)" → 10  (Amazon multi-line)
 //   2. "<N> Qty Pack" embedded in product name → that N  (e.g., "Therali Leaves 50 Qty Pack" → 50)
 //   3. "Total Qty: N" — preferred when present (Flipkart footer)
+//   3.5 Meesho Qty COLUMN (label row / tax-invoice row) — the title's own "1 Qty" lies
 //   4. MAX of any "<N> Qty" or "Qty <N>" patterns — NOT sum (avoids double-counting
 //      between row Qty and footer Total Qty, both of which equal the same number for
 //      single-line invoices)
@@ -3455,6 +3498,15 @@ function detectQuantity(text) {
         const n = parseInt(totalQty[1], 10);
         if (n > 0 && n < 10000) return n;
     }
+
+    // Strategy 3.5: Meesho column Qty — must beat the loose "N Qty" scan below.
+    // Meesho catalog TITLES routinely end in "… 1.94Kg, 1 Qty" / "1 Qty - Free Size":
+    // that "1 Qty" describes the listing, it is not the number of units ordered, so
+    // Strategy 4 read it and reported 1 Qty for a 2-unit order. Both Meesho tables
+    // carry the real number in a column, so read the column instead. Runs after the
+    // pack strategies so a genuine "N Qty Pack" listing still reports its pack size.
+    const meeshoQty = detectMeeshoColumnQty(t);
+    if (meeshoQty) return meeshoQty;
 
     // Strategy 4: MAX of any "<N> Qty" or "Qty <N>" pattern.
     // Using MAX (not SUM) is important: for single-line invoices the row Qty
@@ -4579,6 +4631,31 @@ function setBatchStatus(html, type) {
     batchStatus.className = 'drive-status show' + (type ? ' ' + type : '');
 }
 
+// ── Drive links ───────────────────────────────────────────────────────────────
+// The Apps Script returns fileUrl + folderUrl on every save. Surfacing both is the
+// only way to cross-check that a file really landed in Drive without leaving the app.
+const driveFolders = new Map();   // folderUrl → folder name, for the batch summary
+
+function driveLinks(res) {
+    if (!res) return '';
+    const bits = [];
+    if (res.fileUrl)   bits.push(`<a href="${res.fileUrl}"   target="_blank" rel="noopener">📄 Open file</a>`);
+    if (res.folderUrl) bits.push(`<a href="${res.folderUrl}" target="_blank" rel="noopener">📁 Open Drive folder</a>`);
+    return bits.length ? ' · ' + bits.join(' · ') : '';
+}
+
+function rememberDriveFolder(res) {
+    if (res && res.folderUrl) driveFolders.set(res.folderUrl, res.folder || 'Drive folder');
+}
+
+/** One link per date folder the batch wrote into (a batch can span two dates). */
+function batchFolderLinks() {
+    if (!driveFolders.size) return '';
+    return ' · ' + [...driveFolders.entries()]
+        .map(([url, name]) => `<a href="${url}" target="_blank" rel="noopener">📁 Open ${escapeHtml(name)}</a>`)
+        .join(' · ');
+}
+
 /** Show the queue and hide the single-file form (and vice-versa). */
 function showBatchMode(on) {
     batchPanel.style.display = on ? 'block' : 'none';
@@ -4678,6 +4755,7 @@ batchDriveBtn.addEventListener('click', async () => {
     }
     batch.busy = true; renderBatch();
 
+    driveFolders.clear();   // links belong to this run, not the previous one
     let done = 0, skipped = 0, failed = 0;
     for (const it of batch.items) {
         if (!isSendable(it)) continue;
@@ -4711,18 +4789,23 @@ batchDriveBtn.addEventListener('click', async () => {
                 res = await uploadToGDrive(bytes, it.outName, folderDate, choice, uploadId, identity);
             }
 
+            // Links straight to what was just written, so the save can be eyeballed in
+            // Drive without hunting for the folder.
+            rememberDriveFolder(res);
+            const links = driveLinks(res);
+
             if (res.identical) {
                 it.status = 'done'; skipped++;
                 it.outName = res.filename || it.outName;
-                it.note = '♻ Already in Drive as <strong>' + escapeHtml(it.outName) + '</strong> — not duplicated.';
+                it.note = '♻ Already in Drive as <strong>' + escapeHtml(it.outName) + '</strong> — not duplicated.' + links;
             } else if (res.opaque) {
                 it.status = 'done'; done++;
-                it.note = '⚠ Sent, but the browser blocked the confirmation — check the folder.';
+                it.note = '⚠ Sent, but the browser blocked the confirmation — check the folder.' + links;
             } else if (res.success) {
                 it.status = 'done'; done++;
                 it.outName = res.filename || it.outName;
                 it.note = '✓ Saved as <strong>' + escapeHtml(it.outName) + '</strong>' +
-                          (res.replaced > 0 ? ' (replaced the old copy)' : '');
+                          (res.replaced > 0 ? ' (replaced the old copy)' : '') + links;
             } else {
                 throw new Error(res.error || 'upload rejected');
             }
@@ -4741,7 +4824,8 @@ batchDriveBtn.addEventListener('click', async () => {
     if (skipped)    parts.push(`skipped ${skipped} already-saved`);
     if (dupesLeft)  parts.push(`left out ${dupesLeft} already saved in Drive`);
     if (failed)     parts.push(`${failed} failed`);
-    setBatchStatus((failed ? '⚠ ' : '✓ ') + 'Batch finished — ' + (parts.join(' · ') || 'nothing to do') + '.',
+    setBatchStatus((failed ? '⚠ ' : '✓ ') + 'Batch finished — ' + (parts.join(' · ') || 'nothing to do') + '.'
+                   + batchFolderLinks(),
                    failed ? 'error' : 'success');
 });
 
