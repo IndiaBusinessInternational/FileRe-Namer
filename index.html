@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.6</title>
+    <title>IBI File Re-Namer v4.7</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.6">v4.6</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.7">v4.7</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.6</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.7</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1962,6 +1962,13 @@ async function deepseekVisionCall(apiKey, prompt, base64Image) {
                     model: model,
                     temperature: 0,
                     max_tokens: 600,
+                    // Non-thinking mode. DeepSeek v4 defaults to THINKING at
+                    // high effort, and reasoning tokens come out of this same
+                    // 600-token budget — so with it on the call can spend the
+                    // whole allowance reasoning and return nothing. Reading a
+                    // few fields off a document to build a filename needs no
+                    // reasoning pass.
+                    thinking: { type: 'disabled' },
                     messages: [{
                         role: 'user',
                         content: [
