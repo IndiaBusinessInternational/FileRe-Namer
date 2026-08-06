@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.7</title>
+    <title>IBI File Re-Namer v4.8</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.7">v4.7</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.8">v4.8</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.7</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.8</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1571,15 +1571,37 @@ function showProviderFields(provider) {
 // Unlock lasts for THIS TAB only (sessionStorage, not localStorage): the point is to
 // keep keys away from whoever else uses the machine, and a permanent per-device unlock
 // would defeat that on a shared PC. Closing the tab re-locks.
-const CEO_PIN   = '8899';
-const CEO_STORE = 'ibi_renamer_ceo';
+/* The CEO PIN is NOT in this file, and must never be put back.
+   This page is public, so a PIN compared here would be readable by anyone —
+   it was, until 6 Aug 2026. The check now happens on the IBI CEO
+   Auth Apps Script, which holds the PIN in Script Properties and returns only
+   a signed token. To change the PIN, edit that one Script Property; nothing
+   here needs touching.
+   text/plain keeps this a "simple" request so the browser skips the CORS
+   preflight that Apps Script will not answer. */
+const CEO_AUTH_URL = "";   // ← paste the IBI CEO Auth /exec URL here
+const CEO_STORE    = 'ibi_renamer_ceo';
+
+function ibiVerifyCeoPin(pin) {
+    if (!CEO_AUTH_URL) {
+        return Promise.resolve({ ok: false, error: 'CEO verification is not set up yet.' });
+    }
+    return fetch(CEO_AUTH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'verifyCeo', pin: pin })
+    }).then(r => r.json())
+      .catch(() => ({ ok: false, error: 'Could not reach the verification service.' }));
+}
 
 function isCeoUnlocked() {
-    try { return sessionStorage.getItem(CEO_STORE) === '1'; } catch { return false; }
+    try { return !!sessionStorage.getItem(CEO_STORE); } catch { return false; }
 }
-function setCeoUnlocked(on) {
-    try { on ? sessionStorage.setItem(CEO_STORE, '1') : sessionStorage.removeItem(CEO_STORE); } catch (e) {}
-    settingsBtn.style.display = on ? '' : 'none';
+function setCeoUnlocked(token) {
+    try {
+        token ? sessionStorage.setItem(CEO_STORE, token) : sessionStorage.removeItem(CEO_STORE);
+    } catch (e) {}
+    settingsBtn.style.display = token ? '' : 'none';
 }
 
 function openSettings() {
@@ -1602,17 +1624,28 @@ function requestSettings() {
 }
 
 function tryCeoPin() {
-    if (ceoPin.value.trim() === CEO_PIN) {
-        setCeoUnlocked(true);
-        ceoOverlay.classList.remove('open');
-        ceoPin.value = '';
-        openSettings();
-    } else {
-        ceoError.textContent = '✕ Wrong PIN.';
+    const entered = ceoPin.value.trim();
+    if (!entered) return;
+    ceoOkBtn.disabled = true;
+    ceoError.style.display = 'none';
+    ibiVerifyCeoPin(entered).then(res => {
+        ceoOkBtn.disabled = false;
+        if (res && res.ok && res.token) {
+            setCeoUnlocked(res.token);
+            ceoOverlay.classList.remove('open');
+            ceoPin.value = '';
+            openSettings();
+            return;
+        }
+        // Say which kind of "no" it was, or a lockout looks like a broken PIN.
+        ceoError.textContent = (res && res.code === 'throttled')  ? '✕ ' + res.error
+                             : (res && res.code === 'unconfigured') ? '✕ ' + res.error
+                             : (res && res.error && res.code !== 'incorrect') ? '✕ ' + res.error
+                             : '✕ Wrong PIN.';
         ceoError.style.display = 'block';
         ceoPin.value = '';
         ceoPin.focus();
-    }
+    });
 }
 
 versionTag.addEventListener('click', requestSettings);
@@ -1625,7 +1658,9 @@ ceoCancelBtn.addEventListener('click', () => ceoOverlay.classList.remove('open')
 ceoOverlay.addEventListener('click', e => { if (e.target === ceoOverlay) ceoOverlay.classList.remove('open'); });
 
 // Reflect the current lock state on load (a reload in the same tab stays unlocked).
-setCeoUnlocked(isCeoUnlocked());
+// Re-apply the STORED TOKEN, not a boolean — setCeoUnlocked now saves whatever
+// it is given, so passing true would overwrite the real token with "true".
+setCeoUnlocked((() => { try { return sessionStorage.getItem(CEO_STORE) || ''; } catch (e) { return ''; } })());
 
 // Settings modal open / close
 $('settingsBtn').addEventListener('click', openSettings);
