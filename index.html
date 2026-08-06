@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.8</title>
+    <title>IBI File Re-Namer v4.9</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.8">v4.8</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.9">v4.9</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.8</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.9</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1579,7 +1579,7 @@ function showProviderFields(provider) {
    here needs touching.
    text/plain keeps this a "simple" request so the browser skips the CORS
    preflight that Apps Script will not answer. */
-const CEO_AUTH_URL = "";   // ← paste the IBI CEO Auth /exec URL here
+const CEO_AUTH_URL = "https://script.google.com/macros/s/AKfycbxIW4j7m51JjX6yt38-a1X6XrDRyZp3czMYN8eXECfP9H2twjfrgLaozWCCl843AgWo0g/exec";   // ← paste the IBI CEO Auth /exec URL here
 const CEO_STORE    = 'ibi_renamer_ceo';
 
 function ibiVerifyCeoPin(pin) {
