@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.9</title>
+    <title>IBI File Re-Namer v4.91</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.9">v4.9</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.91">v4.91</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.9</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.91</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -3440,6 +3440,22 @@ function shortenProductName(raw, fullText) {
     if (result.length > 42) {                         // backstop for titles with no separators
         result = result.slice(0, 42).replace(/\s+\S*$/, '').trim();
         result = result.replace(/[,&\s]+$/, '').trim();
+    }
+
+    // Meesho combo listings end "… 2 Qty - Free Size" (the SKU cell and the invoice
+    // description both carry it). That "N Qty" is the listing's PACK SIZE — the Qty
+    // column (detectMeeshoColumnQty) counts packs ordered, so without re-appending it
+    // here the combo info vanishes from the filename ("Mango Leaves Thoranam - 2 Qty"
+    // saved as just "Mango Leaves 1 Qty"). N=1 is merely how single listings are
+    // titled — skip it. Also skip when the text carries a genuine "N Qty Pack":
+    // detectQuantity Strategy 2 already reports that N as the Quantity.
+    if (fullText && !/\b\d+\s*qty\b/i.test(result) && !/\b\d+\s*qty\s+pack\b/i.test(fullText)) {
+        let pack = 0;
+        for (const m of fullText.matchAll(/\b(\d+)\s*Qty\s*-?\s*Free\s+Size\b/gi)) {
+            const n = parseInt(m[1], 10);
+            if (n > pack && n < 1000) pack = n;
+        }
+        if (pack >= 2) result = result + ' ' + pack + ' Qty Pack';
     }
 
     // Append the size / dimensions for easy order identification (if not already present).
