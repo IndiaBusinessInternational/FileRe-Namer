@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.92</title>
+    <title>IBI File Re-Namer v4.93</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.92">v4.92</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.93">v4.93</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.92</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.93</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -3333,7 +3333,8 @@ const PRODUCT_HEAD_NOUNS = new Set([
     'bag','cover','holder','stand','rack','organizer','organiser','container','leaf','leaves',
     'remover','cutter','peeler','grater','strainer','sieve','colander','funnel','whisk','roller',
     'board','hanger','hook','clip','net','sheet','lamp','kit','set','opener','masher','chopper',
-    'slicer','tongs','skimmer','frother','churner','grinder','mixer','can','saucer','rug','carpet'
+    'slicer','tongs','skimmer','frother','churner','grinder','mixer','can','saucer','rug','carpet',
+    'thoranam','thoran','toran','garland'
 ]);
 function isProductHeadNoun(w) {
     const n = w.toLowerCase().replace(/[^a-z]/g, '');
@@ -3383,7 +3384,18 @@ function stripTrailingAdjectives(core) {
     if (trailing.length === 0) return kept.join(' ');
     const headWords = new Set(kept.map(bare));
     const headRepeats = trailing.some(w => headWords.has(bare(w)));
-    if (trailing.length >= 2 || headRepeats) return kept.join(' ');
+    if (trailing.length >= 2 || headRepeats) {
+        // Padding follows the size run, so those measurements were marketing prose
+        // ("Thoranam 3 Feet Length for Festivals"), not a size suffix — drop them.
+        // Size WORDS (Small/Medium/Large…) stay; real dimensions re-attach from
+        // extractSizeOrDimensions ("39x16x12 cm") when the document carries them.
+        while (kept.length > end + 1) {
+            const last = kept[kept.length - 1].toLowerCase().replace(/[^a-z0-9.×x]/g, '');
+            if (SIZE_KEEP_WORDS.has(last)) break;
+            kept.pop();
+        }
+        return kept.join(' ');
+    }
     return core;                                       // lone non-head trailing word → keep
 }
 
