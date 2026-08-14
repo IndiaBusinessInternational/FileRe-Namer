@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.93</title>
+    <title>IBI File Re-Namer v4.95</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.93">v4.94</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.95">v4.95</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.93</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.95</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -3564,18 +3564,25 @@ function shortenProductName(raw, fullText) {
     // Meesho combo listings end "… 2 Qty - Free Size" (the SKU cell and the invoice
     // description both carry it). That "N Qty" is the listing's PACK SIZE — the Qty
     // column (detectMeeshoColumnQty) counts packs ordered, so without re-appending it
-    // here the combo info vanishes from the filename ("Mango Leaves Thoranam - 2 Qty"
-    // saved as just "Mango Leaves 1 Qty"). Goes AFTER the size so staff read
-    // "Mango Leaves 39x16x12 cm 2 Qty Pack". N=1 is merely how single listings are
-    // titled — skip it. Also skip when the text carries a genuine "N Qty Pack":
-    // detectQuantity Strategy 2 already reports that N as the Quantity.
+    // here the combo info vanishes from the filename ("Coir Brush 2 Qty." and
+    // "Mango Leaves Thoranam - 2 Qty" both saved as just "… 1 Qty"). Goes AFTER the
+    // size so staff read "Mango Leaves Thoranam 39x16x12 cm 2 Qty".
+    // The wording is the catalogue's own: a multi-unit listing is "Coir Brush, 37.5x11x4
+    // cm, 275 gm each, 2 Qty", whereas "50 Qty Pack" is a DIFFERENT thing — one bundle of
+    // 50 leaves ("Mango Leaves, 50 Qty Pack, 1 Qty"). So this token is never "Qty Pack".
+    // N=1 is merely how single listings are titled — skip it. Also skip when the text
+    // carries a genuine "N Qty Pack": detectQuantity Strategy 2 already reports that N
+    // as the Quantity.
     if (fullText && !/\b\d+\s*qty\b/i.test(result) && !/\b\d+\s*qty\s+pack\b/i.test(fullText)) {
         let pack = 0;
-        for (const m of fullText.matchAll(/\b(\d+)\s*Qty\s*-?\s*Free\s+Size\b/gi)) {
+        // Meesho abbreviates with a full stop — the label cell reads "Coir Brush 2 Qty."
+        // followed by "Free Size", the invoice row "Coir Brush 2 Qty. - Free Size". That
+        // dot must not hide the pack size, so it is optional here, as is the dash.
+        for (const m of fullText.matchAll(/\b(\d+)\s*Qty\.?\s*[-–—,]?\s*Free\s+Size\b/gi)) {
             const n = parseInt(m[1], 10);
             if (n > pack && n < 1000) pack = n;
         }
-        if (pack >= 2) result = result + ' ' + pack + ' Qty Pack';
+        if (pack >= 2) result = result + ' ' + pack + ' Qty';
     }
     return result || raw;
 }
@@ -4298,11 +4305,11 @@ function baseNameFrom(d) {
         // "Amazon Coir Brush 6 Qty 23 May 2026 D 23 May"
         const prod = (d.product || 'Product').trim();
         const qty = parseInt(d.qty, 10) || 1;
-        // A combo product name already ends "… 2 Qty Pack" — a further "1 Qty" would
-        // read as contradicting it ("2 Qty Pack 1 Qty"), so the single-pack token is
-        // dropped: "Meesho Mango Leaves 39x16x12 cm 2 Qty Pack 11 Aug 2026 D 11 Aug".
-        // Ordering 2+ packs still shows its count: "… 2 Qty Pack 2 Qty …".
-        const qtyToken = (qty === 1 && /\b\d+\s*Qty\s*Pack\b/i.test(prod)) ? '' : ' ' + qty + ' Qty';
+        // A combo product name already ends "… 2 Qty" (or "… 50 Qty Pack") — a further
+        // "1 Qty" would read as contradicting it ("2 Qty 1 Qty"), so the single-pack
+        // token is dropped: "Meesho Coir Brush 2 Qty 14 Aug 2026 D 14 Aug".
+        // Ordering 2+ packs still shows its count: "… 2 Qty 2 Qty …".
+        const qtyToken = (qty === 1 && /\b\d+\s*Qty(?:\s*Pack)?\b/i.test(prod)) ? '' : ' ' + qty + ' Qty';
         name = plat + ' ' + prod + qtyToken + ' ' + invDateLong + ' D ' + pickShort;
     }
 
