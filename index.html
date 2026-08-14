@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.93">v4.93</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.93">v4.94</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1288,6 +1288,7 @@
                     <option value="openai">OpenAI (GPT-4o)</option>
                     <option value="claude">Anthropic Claude</option>
                     <option value="deepseek">DeepSeek</option>
+                    <option value="local">IBI Local (this laptop — free, private)</option>
                 </select>
             </div>
 
@@ -1341,6 +1342,30 @@
                         <input type="password" id="deepseekKeyInput" placeholder="sk-..." autocomplete="off" spellcheck="false">
                     </div>
                     <p class="key-hint">Uses <strong>DeepSeek V4</strong> (multimodal vision). Key: <a href="https://platform.deepseek.com/api_keys" target="_blank">platform.deepseek.com</a>. Note: if your browser blocks the request (CORS), use Gemini/OpenAI/Claude instead.</p>
+                </div>
+            </div>
+
+            <!-- IBI Local fields -->
+            <!-- Two fields rather than a key, because there is no vendor here:
+                 the address of the laptop's gateway, and the code that gateway
+                 checks. Neither is baked into this page on purpose — this site
+                 is public, so a code shipped in the HTML would hand the laptop's
+                 GPU to anyone who viewed source. They are typed once per browser
+                 and kept in localStorage, exactly as the AI System does it. -->
+            <div id="localFields" class="provider-fields" style="display:none;">
+                <div class="form-field" style="margin-bottom:10px;">
+                    <label for="localUrlInput" style="font-size:14px;font-weight:500;">Laptop address</label>
+                    <div class="api-key-row">
+                        <input type="text" id="localUrlInput" placeholder="https://ai-local.indiabusinessinternational.online" autocomplete="off" spellcheck="false">
+                    </div>
+                    <p class="key-hint">Leave blank to use the usual address. On the laptop itself you can use <strong>http://localhost:11434</strong>.</p>
+                </div>
+                <div class="form-field" style="margin-bottom:18px;">
+                    <label for="localCodeInput" style="font-size:14px;font-weight:500;">Access code</label>
+                    <div class="api-key-row">
+                        <input type="password" id="localCodeInput" placeholder="the gateway access code" autocomplete="off" spellcheck="false">
+                    </div>
+                    <p class="key-hint">Runs <strong>qwen3.5:4b</strong> on the laptop — no key, no cost, and the document never leaves the building. <strong>The laptop must be awake.</strong> Slower than the cloud engines and weaker on messy handwriting; if a scan comes back poor, switch back to Gemini.</p>
                 </div>
             </div>
 
@@ -1505,6 +1530,13 @@ const AI_PROVIDER_STORE  = 'ibi_ai_provider';
 const OPENAI_KEY_STORE   = 'ibi_openai_key';
 const CLAUDE_KEY_STORE   = 'ibi_claude_key';
 const DEEPSEEK_KEY_STORE = 'ibi_deepseek_key';
+const LOCAL_URL_STORE    = 'ibi_local_url';
+const LOCAL_CODE_STORE   = 'ibi_local_code';
+
+// The laptop's gateway. Safe to bake in — it is only an address, and the
+// gateway refuses everything that arrives without the access code, which is
+// deliberately NOT baked in (this site is public; see the settings panel).
+const DEFAULT_LOCAL_URL  = 'https://ai-local.indiabusinessinternational.online';
 
 // ── Default Google Drive endpoint — used on EVERY device unless overridden in ⚙ Settings ──
 // Settings are stored per-browser, so a URL saved on a laptop never reaches a phone. Baking
@@ -1528,6 +1560,13 @@ function getAiProvider()  { try { return localStorage.getItem(AI_PROVIDER_STORE)
 function getOpenaiKey()   { try { return localStorage.getItem(OPENAI_KEY_STORE)  || ''; } catch { return ''; } }
 function getClaudeKey()   { try { return localStorage.getItem(CLAUDE_KEY_STORE)  || ''; } catch { return ''; } }
 function getDeepseekKey() { try { return localStorage.getItem(DEEPSEEK_KEY_STORE) || ''; } catch { return ''; } }
+function getLocalUrl()    {
+    try {
+        const saved = (localStorage.getItem(LOCAL_URL_STORE) || '').trim().replace(/\/+$/, '');
+        return saved || DEFAULT_LOCAL_URL;
+    } catch { return DEFAULT_LOCAL_URL; }
+}
+function getLocalCode()   { try { return (localStorage.getItem(LOCAL_CODE_STORE) || '').trim(); } catch { return ''; } }
 
 // True if the currently-selected provider has a key configured.
 function hasAiKey() {
@@ -1535,6 +1574,9 @@ function hasAiKey() {
     if (p === 'openai') return !!getOpenaiKey();
     if (p === 'claude') return !!getClaudeKey();
     if (p === 'deepseek') return !!getDeepseekKey();
+    // The local engine's "key" is the gateway access code — without one every
+    // request comes back 401, so treat a missing code the same as a missing key.
+    if (p === 'local') return !!getLocalCode();
     return !!getGeminiKey();
 }
 
@@ -1547,6 +1589,9 @@ function refreshSettingsUI() {
     $('openaiKeyInput').value   = getOpenaiKey();
     $('claudeKeyInput').value   = getClaudeKey();
     $('deepseekKeyInput').value = getDeepseekKey();
+    // Show the address actually in use, so the field is never a blank mystery.
+    $('localUrlInput').value    = getLocalUrl();
+    $('localCodeInput').value   = getLocalCode();
     $('gasUrlInput').value      = getGasUrl();
     showProviderFields(provider);
     const btn = $('settingsBtn');
@@ -1561,6 +1606,7 @@ function showProviderFields(provider) {
     $('openaiFields').style.display = provider === 'openai' ? 'block' : 'none';
     $('claudeFields').style.display = provider === 'claude' ? 'block' : 'none';
     $('deepseekFields').style.display = provider === 'deepseek' ? 'block' : 'none';
+    $('localFields').style.display    = provider === 'local' ? 'block' : 'none';
 }
 
 // =================== CEO LOCK ===================
@@ -1608,7 +1654,7 @@ function openSettings() {
     refreshSettingsUI();
     $('keyStatus').textContent = '';
     $('settingsOverlay').classList.add('open');
-    ['geminiKeyInput','openaiKeyInput','claudeKeyInput','deepseekKeyInput'].forEach(id => { $(id).type = 'password'; });
+    ['geminiKeyInput','openaiKeyInput','claudeKeyInput','deepseekKeyInput','localCodeInput'].forEach(id => { $(id).type = 'password'; });
 }
 
 /**
@@ -1673,7 +1719,7 @@ $('aiProviderSelect').addEventListener('change', () => showProviderFields($('aiP
 // API-key protection: keys can be PASTED IN but never copied/cut/dragged OUT,
 // and they always stay masked (no reveal button). This stops the key being
 // lifted from this app into another app or site.
-['geminiKeyInput','openaiKeyInput','claudeKeyInput','deepseekKeyInput'].forEach(id => {
+['geminiKeyInput','openaiKeyInput','claudeKeyInput','deepseekKeyInput','localCodeInput'].forEach(id => {
     const el = $(id);
     if (!el) return;
     el.type = 'password';                              // always masked
@@ -1692,6 +1738,8 @@ $('saveKeyBtn').addEventListener('click', () => {
     const oKey  = $('openaiKeyInput').value.trim();
     const cKey  = $('claudeKeyInput').value.trim();
     const dsKey = $('deepseekKeyInput').value.trim();
+    const lUrl  = $('localUrlInput').value.trim();
+    const lCode = $('localCodeInput').value.trim();
     const gas   = $('gasUrlInput').value.trim();
     try {
         localStorage.setItem(AI_PROVIDER_STORE, provider);
@@ -1699,6 +1747,11 @@ $('saveKeyBtn').addEventListener('click', () => {
         localStorage.setItem(GEMINI_MODEL_STORE, gModel);
         if (oKey) localStorage.setItem(OPENAI_KEY_STORE, oKey); else localStorage.removeItem(OPENAI_KEY_STORE);
         if (cKey) localStorage.setItem(CLAUDE_KEY_STORE, cKey); else localStorage.removeItem(CLAUDE_KEY_STORE);
+        // Store the address only when it differs from the built-in one, so a
+        // future change to DEFAULT_LOCAL_URL reaches browsers that never
+        // deliberately overrode it.
+        if (lUrl && lUrl.replace(/\/+$/, '') !== DEFAULT_LOCAL_URL) localStorage.setItem(LOCAL_URL_STORE, lUrl); else localStorage.removeItem(LOCAL_URL_STORE);
+        if (lCode) localStorage.setItem(LOCAL_CODE_STORE, lCode); else localStorage.removeItem(LOCAL_CODE_STORE);
         if (dsKey) localStorage.setItem(DEEPSEEK_KEY_STORE, dsKey); else localStorage.removeItem(DEEPSEEK_KEY_STORE);
         if (gas)  localStorage.setItem(GAS_URL_STORE, gas);     else localStorage.removeItem(GAS_URL_STORE);
         driveBtn.disabled = !state.file;   // clickable whenever a PDF is loaded; click guides to Settings if no URL
@@ -2029,12 +2082,58 @@ async function deepseekVisionCall(apiKey, prompt, base64Image) {
     throw new Error(lastErr ? ('DeepSeek — ' + lastErr.message) : 'All DeepSeek models failed.');
 }
 
+// The laptop's own model, through the gateway. Speaks the OpenAI shape, so the
+// image travels as a data URL exactly as it does for OpenAI above.
+async function localVisionCall(prompt, base64Image) {
+    const code = getLocalCode();
+    if (!code) throw new Error('IBI Local — no access code saved. Open ⚙ Settings and paste the gateway access code.');
+
+    let response;
+    try {
+        response = await fetch(getLocalUrl() + '/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-ibi-access': code },
+            body: JSON.stringify({
+                model: 'qwen3.5:4b',
+                max_tokens: 2048,
+                temperature: 0,
+                // The model deliberates unless told not to, and on this endpoint
+                // that burns the whole budget in a reasoning field while the
+                // answer comes back EMPTY. The gateway also applies this, but
+                // send it anyway so a direct localhost address still behaves.
+                reasoning_effort: 'none',
+                messages: [{ role: 'user', content: [
+                    { type: 'text', text: prompt },
+                    { type: 'image_url', image_url: { url: 'data:image/png;base64,' + base64Image } }
+                ] }]
+            })
+        });
+    } catch (e) {
+        // A sleeping laptop fails at the network layer, which otherwise surfaces
+        // as a bare "Failed to fetch" and reads like a bug in this app.
+        throw new Error('IBI Local — could not reach the laptop. It must be switched on and awake. (' + e.message + ')');
+    }
+
+    if (!response.ok) {
+        const msg = await response.text().catch(() => '');
+        if (response.status === 401) throw new Error('IBI Local — the access code was refused. Check it in ⚙ Settings.');
+        if (response.status === 403) throw new Error('IBI Local — this site is not allowed to use the laptop engine.');
+        throw new Error('IBI Local ' + response.status + ': ' + msg.slice(0, 200));
+    }
+
+    const data = await response.json();
+    const text = data?.choices?.[0]?.message?.content?.trim() || '';
+    if (!text) throw new Error('IBI Local returned an empty answer — try Gemini for this page.');
+    return text;
+}
+
 // Unified vision dispatcher — routes to the provider chosen in Settings.
 async function aiVisionScan(prompt, base64Image) {
     const provider = getAiProvider();
     if (provider === 'openai') return openaiVisionCall(getOpenaiKey(), prompt, base64Image);
     if (provider === 'claude') return claudeVisionCall(getClaudeKey(), prompt, base64Image);
     if (provider === 'deepseek') return deepseekVisionCall(getDeepseekKey(), prompt, base64Image);
+    if (provider === 'local') return localVisionCall(prompt, base64Image);
     return geminiVisionCall(getGeminiKey(), getGeminiModel(), prompt, base64Image);
 }
 
