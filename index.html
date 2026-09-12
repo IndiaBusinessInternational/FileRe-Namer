@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.96">v4.96</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.97">v4.97</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -2034,9 +2034,13 @@ async function claudeVisionCall(apiKey, prompt, base64Image) {
 }
 
 // ── DeepSeek Vision (V4, OpenAI-compatible format) with model fallback ──
-// deepseek-chat / deepseek-reasoner deprecate 2026-07-24 → deepseek-v4-flash;
-// we try the current explicit names first, then the compatibility aliases.
-const DEEPSEEK_MODEL_CHAIN = ['deepseek-v4-flash', 'deepseek-chat', 'deepseek-v4-pro', 'deepseek-reasoner'];
+// 'deepseek-flash' is DeepSeek V4.1 Flash, the canonical ID. The old names
+// ('deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-flash') all still work,
+// but they are ALIASES OF THIS SAME MODEL — verified live 12 Sep 2026 — so
+// retrying them after a failure just calls Flash again and cannot help. Only a
+// genuinely different model belongs in this chain, hence the two entries.
+// ⚠ v4-pro costs ~4× Flash on output: it is the last resort, never the default.
+const DEEPSEEK_MODEL_CHAIN = ['deepseek-flash', 'deepseek-v4-pro'];
 async function deepseekVisionCall(apiKey, prompt, base64Image) {
     if (!apiKey) throw new Error('DeepSeek API key not set — add it in ⚙ Settings.');
     let lastErr = null;
