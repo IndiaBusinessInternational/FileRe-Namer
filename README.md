@@ -1,4 +1,4 @@
-# IBI File Re-Namer v4.99
+# IBI File Re-Namer v5.0
 
 The AI engine the CEO picks in Settings applies to every device, and API keys / the Local AI code live only on the Drive Apps Script (v12), never in a browser.
 

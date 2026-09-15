@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.99</title>
+    <title>IBI File Re-Namer v5.0</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.99">v4.99</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.0">v5.0</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.99</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.0</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1740,7 +1740,7 @@ function showProviderFields(provider) {
 // =================== CEO LOCK ===================
 // The API keys and the Drive endpoint sit behind a PIN, and the way in is the version
 // badge — there is no visible "Settings" control for staff to find. The AI Key button
-// only appears once unlocked.
+// never appears, not even once unlocked (CEO, 15 Sep 2026).
 //
 // Unlock lasts for THIS TAB only (sessionStorage, not localStorage): the point is to
 // keep keys away from whoever else uses the machine, and a permanent per-device unlock
@@ -1775,7 +1775,9 @@ function setCeoUnlocked(token) {
     try {
         token ? sessionStorage.setItem(CEO_STORE, token) : sessionStorage.removeItem(CEO_STORE);
     } catch (e) {}
-    settingsBtn.style.display = token ? '' : 'none';
+    // The AI Key button stays hidden even after unlocking: the version badge is the
+    // ONLY way into Settings, so nothing on screen advertises that Settings exist.
+    settingsBtn.style.display = 'none';
 }
 
 function openSettings() {
