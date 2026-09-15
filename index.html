@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v5.0</title>
+    <title>IBI File Re-Namer v5.1</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.0">v5.0</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.1">v5.1</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.0</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.1</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1742,9 +1742,10 @@ function showProviderFields(provider) {
 // badge — there is no visible "Settings" control for staff to find. The AI Key button
 // never appears, not even once unlocked (CEO, 15 Sep 2026).
 //
-// Unlock lasts for THIS TAB only (sessionStorage, not localStorage): the point is to
-// keep keys away from whoever else uses the machine, and a permanent per-device unlock
-// would defeat that on a shared PC. Closing the tab re-locks.
+// The PIN is asked EVERY time Settings is opened (CEO, 15 Sep 2026). The unlock token
+// lives only in memory while Settings is open — it is forgotten the moment Settings
+// closes, however it closes, and is never written to sessionStorage/localStorage. A
+// staff member at a PC the CEO used a minute ago therefore gets the PIN prompt too.
 /* The CEO PIN is NOT in this file, and must never be put back.
    This page is public, so a PIN compared here would be readable by anyone —
    it was, until 6 Aug 2026. The check now happens on the IBI CEO
@@ -1754,7 +1755,8 @@ function showProviderFields(provider) {
    text/plain keeps this a "simple" request so the browser skips the CORS
    preflight that Apps Script will not answer. */
 const CEO_AUTH_URL = "https://script.google.com/macros/s/AKfycbxIW4j7m51JjX6yt38-a1X6XrDRyZp3czMYN8eXECfP9H2twjfrgLaozWCCl843AgWo0g/exec";   // ← paste the IBI CEO Auth /exec URL here
-const CEO_STORE    = 'ibi_renamer_ceo';
+const CEO_STORE    = 'ibi_renamer_ceo';   // old tab-long unlock; only removed now
+let ceoToken = '';                          // in memory, only while Settings is open
 
 function ibiVerifyCeoPin(pin) {
     if (!CEO_AUTH_URL) {
@@ -1768,13 +1770,10 @@ function ibiVerifyCeoPin(pin) {
       .catch(() => ({ ok: false, error: 'Could not reach the verification service.' }));
 }
 
-function isCeoUnlocked() {
-    try { return !!sessionStorage.getItem(CEO_STORE); } catch { return false; }
-}
+function isCeoUnlocked() { return !!ceoToken; }
+function getCeoToken()   { return ceoToken; }
 function setCeoUnlocked(token) {
-    try {
-        token ? sessionStorage.setItem(CEO_STORE, token) : sessionStorage.removeItem(CEO_STORE);
-    } catch (e) {}
+    ceoToken = token || '';
     // The AI Key button stays hidden even after unlocking: the version badge is the
     // ONLY way into Settings, so nothing on screen advertises that Settings exist.
     settingsBtn.style.display = 'none';
@@ -1796,7 +1795,9 @@ function openSettings() {
  * so the lock can't be walked around by whatever calls it.
  */
 function requestSettings() {
-    if (isCeoUnlocked()) return openSettings();
+    // Always ask. (Settings already open means the PIN was just entered.)
+    if ($('settingsOverlay').classList.contains('open') && isCeoUnlocked()) return;
+    setCeoUnlocked('');
     ceoError.style.display = 'none';
     ceoPin.value = '';
     ceoOverlay.classList.add('open');
@@ -1837,13 +1838,17 @@ ceoPin.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefa
 ceoCancelBtn.addEventListener('click', () => ceoOverlay.classList.remove('open'));
 ceoOverlay.addEventListener('click', e => { if (e.target === ceoOverlay) ceoOverlay.classList.remove('open'); });
 
-// Reflect the current lock state on load (a reload in the same tab stays unlocked).
-// Re-apply the STORED TOKEN, not a boolean — setCeoUnlocked now saves whatever
-// it is given, so passing true would overwrite the real token with "true".
-setCeoUnlocked((() => { try { return sessionStorage.getItem(CEO_STORE) || ''; } catch (e) { return ''; } })());
+// Start locked, and clear any tab-long unlock an older version left behind.
+try { sessionStorage.removeItem(CEO_STORE); } catch (e) {}
+setCeoUnlocked('');
+
+// Forget the unlock whenever Settings closes — ✕, a click outside, Save, anything.
+new MutationObserver(() => {
+    if (!$('settingsOverlay').classList.contains('open')) setCeoUnlocked('');
+}).observe($('settingsOverlay'), { attributes: true, attributeFilter: ['class'] });
 
 // Settings modal open / close
-$('settingsBtn').addEventListener('click', openSettings);
+$('settingsBtn').addEventListener('click', requestSettings);
 $('modalClose').addEventListener('click', () => $('settingsOverlay').classList.remove('open'));
 $('settingsOverlay').addEventListener('click', e => { if (e.target === $('settingsOverlay')) $('settingsOverlay').classList.remove('open'); });
 
@@ -1913,7 +1918,7 @@ $('saveKeyBtn').addEventListener('click', async () => {
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({
                 type: 'setAiConfig',
-                token: (() => { try { return sessionStorage.getItem(CEO_STORE) || ''; } catch (e) { return ''; } })(),
+                token: getCeoToken(),
                 provider: provider,
                 geminiModel: gModel,
                 localUrl: lUrl,
