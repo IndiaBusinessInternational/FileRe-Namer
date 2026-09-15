@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.98</title>
+    <title>IBI File Re-Namer v4.99</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.98">v4.98</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.99">v4.99</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.98</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.99</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1290,7 +1290,7 @@
                     <option value="deepseek">DeepSeek</option>
                     <option value="local">IBI Local (this laptop — free, private)</option>
                 </select>
-                <p class="key-hint" id="aiSharedHint">The engine you pick here is used on <strong>every device</strong> running the Re-Namer — staff laptops switch by themselves. Keys and the access code below stay on <strong>this device only</strong>; each device needs its own once.</p>
+                <p class="key-hint" id="aiSharedHint">The engine you pick here is used on <strong>every device</strong> running the Re-Namer — staff laptops switch by themselves. Keys and the access code are saved <strong>on the server only</strong>, never in any browser: enter each one once, and every device can scan.</p>
             </div>
 
             <!-- Gemini fields -->
@@ -1351,15 +1351,16 @@
                  the address of the laptop's gateway, and the code that gateway
                  checks. Neither is baked into this page on purpose — this site
                  is public, so a code shipped in the HTML would hand the laptop's
-                 GPU to anyone who viewed source. They are typed once per browser
-                 and kept in localStorage, exactly as the AI System does it. -->
+                 GPU to anyone who viewed source. They are typed once by the CEO
+                 and kept on the Drive Apps Script, which makes the call itself —
+                 the code never reaches or stays in any browser. -->
             <div id="localFields" class="provider-fields" style="display:none;">
                 <div class="form-field" style="margin-bottom:10px;">
                     <label for="localUrlInput" style="font-size:14px;font-weight:500;">Laptop address</label>
                     <div class="api-key-row">
                         <input type="text" id="localUrlInput" placeholder="https://ai-local.indiabusinessinternational.online" autocomplete="off" spellcheck="false">
                     </div>
-                    <p class="key-hint">Leave blank to use the usual address. On the laptop itself you can use <strong>http://localhost:11434</strong>.</p>
+                    <p class="key-hint">Leave blank to use the usual address. It must be an <strong>https://</strong> address — the scan runs from Google's server, which cannot reach localhost.</p>
                 </div>
                 <div class="form-field" style="margin-bottom:18px;">
                     <label for="localCodeInput" style="font-size:14px;font-weight:500;">Access code</label>
@@ -1522,7 +1523,8 @@ debugToggle.addEventListener('click', () => {
 });
 
 // =================== GEMINI SETTINGS ===================
-// API key and model stored in localStorage — never sent anywhere except Google's API.
+// Keys are held by the Drive Apps Script, never by this page (see below). The *_KEY_STORE
+// names remain only to find and delete copies older versions saved in browsers.
 
 const GEMINI_KEY_STORE  = 'ibi_gemini_key';
 const GEMINI_MODEL_STORE = 'ibi_gemini_model';
@@ -1546,26 +1548,61 @@ const DEFAULT_LOCAL_URL  = 'https://ai-local.indiabusinessinternational.online';
 // quotes — it MUST end in /exec. Leave it '' to keep Drive upload per-device (the old way).
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxTI0mUjbZTxcmBHIAj6n_JZzsa0jznlXNI8gXioPlGv3OjrHs9pgaIhCauQ_18fU1JHA/exec';
 
-// ── ONE AI ENGINE FOR EVERY DEVICE ──
-// The engine CHOICE (and Gemini model) is set by the CEO and kept on the Drive Apps
-// Script, so switching to Local AI on one PC reaches every staff laptop by itself.
-// Each browser keeps the last value it read here, so it still works offline.
-// Keys and the local access code are NOT shared — the endpoint is public.
+// ── AI ENGINE, KEYS AND SCANS LIVE ON THE SERVER ──
+// The Drive Apps Script (v12+) holds the CEO's engine choice AND every API key / the
+// Local AI access code. This page never stores or even receives a key: the server
+// reports only WHETHER each one is set, and every AI scan is sent to the server, which
+// adds the key itself. Switching engine on one PC therefore reaches every staff laptop.
+// Each browser caches the last reply (engine + yes/no per key) so it can show state
+// before the network answers.
 const AI_SHARED_STORE = 'ibi_ai_shared';
 const AI_PROVIDER_NAMES = { gemini: 'Google Gemini', openai: 'OpenAI', claude: 'Anthropic Claude', deepseek: 'DeepSeek', local: 'IBI Local AI' };
+// Keys older versions of this page saved in the browser. Read ONLY to move them to the
+// server once (CEO's Save) and while a pre-v12 Drive script is still deployed; deleted
+// from the browser as soon as the server holds that key.
+const LEGACY_KEY_STORES = { gemini: GEMINI_KEY_STORE, openai: OPENAI_KEY_STORE, claude: CLAUDE_KEY_STORE, deepseek: DEEPSEEK_KEY_STORE, local: LOCAL_CODE_STORE };
 
 function getSharedAi() {
     try {
         const s = JSON.parse(localStorage.getItem(AI_SHARED_STORE) || 'null');
-        return s && AI_PROVIDER_NAMES[s.provider] ? s : null;
+        return s && (s.proxy || AI_PROVIDER_NAMES[s.provider]) ? s : null;
     } catch { return null; }
+}
+// True once the deployed Drive script runs AI scans itself (v12+).
+function serverAiReady() { const s = getSharedAi(); return !!(s && s.proxy); }
+
+function legacyKey(p) { try { return (localStorage.getItem(LEGACY_KEY_STORES[p]) || '').trim(); } catch { return ''; } }
+
+// Delete every browser-stored key the server now holds.
+function purgeLegacyKeys() {
+    const s = getSharedAi();
+    if (!s || !s.proxy) return;
+    try {
+        Object.keys(LEGACY_KEY_STORES).forEach(p => { if (s.keys && s.keys[p]) localStorage.removeItem(LEGACY_KEY_STORES[p]); });
+        localStorage.removeItem(LOCAL_URL_STORE);
+    } catch (e) {}
+}
+
+function storeSharedAi(res) {
+    try {
+        if (res.proxy || AI_PROVIDER_NAMES[res.provider]) {
+            localStorage.setItem(AI_SHARED_STORE, JSON.stringify({
+                provider: AI_PROVIDER_NAMES[res.provider] ? res.provider : '',
+                geminiModel: res.geminiModel || '', localUrl: res.localUrl || '',
+                keys: res.keys || {}, proxy: !!res.proxy, updatedAt: res.updatedAt || ''
+            }));
+        } else {
+            localStorage.removeItem(AI_SHARED_STORE);
+        }
+    } catch (e) {}
+    purgeLegacyKeys();
 }
 
 let aiSelectTouched = false;   // the CEO changed the engine picker in the open Settings
 let sharedAiCheckedAt = 0;
 let sharedAiInFlight = null;
-// Reads the CEO's choice. Throttled, and never throws: an unreachable Drive
-// endpoint just leaves the last known choice in place.
+// Reads the server's AI settings. Throttled, and never throws: an unreachable Drive
+// endpoint just leaves the last known state in place.
 function refreshSharedAiConfig(force) {
     if (sharedAiInFlight) return sharedAiInFlight;
     if (!force && Date.now() - sharedAiCheckedAt < 30000) return Promise.resolve(getSharedAi());
@@ -1573,20 +1610,14 @@ function refreshSharedAiConfig(force) {
     if (!url) return Promise.resolve(getSharedAi());
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = ctrl ? setTimeout(() => ctrl.abort(), 8000) : null;
-    const before = getAiProvider() + '|' + getGeminiModel();
+    const before = JSON.stringify([getAiProvider(), getGeminiModel(), hasAiKey()]);
     sharedAiInFlight = fetch(url + (url.includes('?') ? '&' : '?') + 'action=aiConfig', { signal: ctrl ? ctrl.signal : undefined })
         .then(r => r.json())
         .then(res => {
             sharedAiCheckedAt = Date.now();
             if (!res || res.success !== true) return getSharedAi();
-            try {
-                if (AI_PROVIDER_NAMES[res.provider]) {
-                    localStorage.setItem(AI_SHARED_STORE, JSON.stringify({ provider: res.provider, geminiModel: res.geminiModel || '', updatedAt: res.updatedAt || '' }));
-                } else {
-                    localStorage.removeItem(AI_SHARED_STORE);   // CEO has never set one: this device's own choice applies
-                }
-            } catch (e) {}
-            if (getAiProvider() + '|' + getGeminiModel() !== before) onAiEngineChanged();
+            storeSharedAi(res);
+            if (JSON.stringify([getAiProvider(), getGeminiModel(), hasAiKey()]) !== before) onAiEngineChanged();
             return getSharedAi();
         })
         .catch(() => getSharedAi())
@@ -1594,13 +1625,13 @@ function refreshSharedAiConfig(force) {
     return sharedAiInFlight;
 }
 
-// Keep what is on screen in step with an engine switch made on another device.
+// Keep what is on screen in step with a change made on another device.
 function onAiEngineChanged() {
     const overlay = $('settingsOverlay');
     if (overlay && overlay.classList.contains('open')) {
-        // Settings is open: update only the engine picker, and only if the CEO has not
-        // already picked something — never wipe keys that are being typed.
+        // Settings is open: never wipe what the CEO is typing or has just picked.
         if (!aiSelectTouched) { $('aiProviderSelect').value = getAiProvider(); $('geminiModelSelect').value = getGeminiModel(); showProviderFields(getAiProvider()); }
+        showKeyStates();
     } else {
         refreshSettingsUI();
     }
@@ -1611,14 +1642,14 @@ function onAiEngineChanged() {
 
 function aiProviderName(p) { return AI_PROVIDER_NAMES[p || getAiProvider()] || 'AI'; }
 
-// Why an AI scan cannot run on THIS device. Staff cannot open Settings, so say who can.
+// Why an AI scan cannot run. Staff cannot open Settings, so say who can.
 function missingAiKeyMessage() {
     const p = getAiProvider();
     const what = p === 'local' ? 'access code' : 'API key';
-    return 'This device has no ' + aiProviderName(p) + ' ' + what + ' yet — the CEO needs to enter it once in ⚙ Settings on this device.';
+    if (serverAiReady()) return 'No ' + aiProviderName(p) + ' ' + what + ' is saved on the server yet — the CEO needs to add it once in ⚙ Settings.';
+    return 'AI scanning is not set up — the CEO needs to update the Google Drive script to v12 and add the ' + aiProviderName(p) + ' ' + what + ' in ⚙ Settings.';
 }
 
-function getGeminiKey()   { try { return localStorage.getItem(GEMINI_KEY_STORE)  || ''; } catch { return ''; } }
 function getGeminiModel() {
     const shared = getSharedAi();
     if (shared && shared.geminiModel) return shared.geminiModel;
@@ -1635,46 +1666,62 @@ function getGasUrl()      {
 }
 function getAiProvider()  {
     const shared = getSharedAi();
-    if (shared) return shared.provider;                 // the CEO's choice wins on every device
+    if (shared && AI_PROVIDER_NAMES[shared.provider]) return shared.provider;   // the CEO's choice wins on every device
     try { return localStorage.getItem(AI_PROVIDER_STORE) || 'gemini'; } catch { return 'gemini'; }
 }
-function getOpenaiKey()   { try { return localStorage.getItem(OPENAI_KEY_STORE)  || ''; } catch { return ''; } }
-function getClaudeKey()   { try { return localStorage.getItem(CLAUDE_KEY_STORE)  || ''; } catch { return ''; } }
-function getDeepseekKey() { try { return localStorage.getItem(DEEPSEEK_KEY_STORE) || ''; } catch { return ''; } }
 function getLocalUrl()    {
+    const shared = getSharedAi();
+    if (shared && shared.proxy) return shared.localUrl || DEFAULT_LOCAL_URL;
     try {
         const saved = (localStorage.getItem(LOCAL_URL_STORE) || '').trim().replace(/\/+$/, '');
         return saved || DEFAULT_LOCAL_URL;
     } catch { return DEFAULT_LOCAL_URL; }
 }
-function getLocalCode()   { try { return (localStorage.getItem(LOCAL_CODE_STORE) || '').trim(); } catch { return ''; } }
 
-// True if the currently-selected provider has a key configured.
+// True if the chosen engine can run: its key is on the server (or, until the Drive
+// script is updated, an older key is still in this browser).
 function hasAiKey() {
     const p = getAiProvider();
-    if (p === 'openai') return !!getOpenaiKey();
-    if (p === 'claude') return !!getClaudeKey();
-    if (p === 'deepseek') return !!getDeepseekKey();
-    // The local engine's "key" is the gateway access code — without one every
-    // request comes back 401, so treat a missing code the same as a missing key.
-    if (p === 'local') return !!getLocalCode();
-    return !!getGeminiKey();
+    const shared = getSharedAi();
+    if (shared && shared.proxy) return !!(shared.keys && shared.keys[p]);
+    return !!legacyKey(p);
+}
+
+// "✓ Saved on the server" beside each key field. The field itself stays EMPTY — a
+// saved credential is never sent back to a page, so there is nothing to show.
+function showKeyStates() {
+    const shared = getSharedAi();
+    [['gemini','geminiKeyInput'],['openai','openaiKeyInput'],['claude','claudeKeyInput'],['deepseek','deepseekKeyInput'],['local','localCodeInput']].forEach(([p, id]) => {
+        const input = $(id);
+        if (!input) return;
+        let tag = document.getElementById(id + 'State');
+        if (!tag) {
+            tag = document.createElement('p');
+            tag.id = id + 'State';
+            tag.className = 'key-hint';
+            input.closest('.api-key-row').insertAdjacentElement('afterend', tag);
+        }
+        const onServer = !!(shared && shared.proxy && shared.keys && shared.keys[p]);
+        const inBrowser = !onServer && !!legacyKey(p);
+        tag.style.color = onServer ? '#10b981' : '#f59e0b';
+        tag.textContent = onServer ? '✓ Saved on the server — type a new one only to replace it.'
+                        : inBrowser ? '⚠ An older copy is saved in this browser — Save moves it to the server and removes it here.'
+                        : 'Not set.';
+    });
 }
 
 // Reflect saved settings in modal on open
 function refreshSettingsUI() {
     const provider = getAiProvider();
     $('aiProviderSelect').value = provider;
-    $('geminiKeyInput').value   = getGeminiKey();
     $('geminiModelSelect').value = getGeminiModel();
-    $('openaiKeyInput').value   = getOpenaiKey();
-    $('claudeKeyInput').value   = getClaudeKey();
-    $('deepseekKeyInput').value = getDeepseekKey();
+    // Key fields are ALWAYS empty: the page holds no keys to show.
+    ['geminiKeyInput','openaiKeyInput','claudeKeyInput','deepseekKeyInput','localCodeInput'].forEach(id => { $(id).value = ''; });
     // Show the address actually in use, so the field is never a blank mystery.
     $('localUrlInput').value    = getLocalUrl();
-    $('localCodeInput').value   = getLocalCode();
     $('gasUrlInput').value      = getGasUrl();
     showProviderFields(provider);
+    showKeyStates();
     const btn = $('settingsBtn');
     if (hasAiKey() || getGasUrl()) btn.classList.add('has-key');
     else                           btn.classList.remove('has-key');
@@ -1816,48 +1863,47 @@ $('geminiModelSelect').addEventListener('change', () => { aiSelectTouched = true
     // 'paste' is intentionally NOT blocked — pasting a key in is allowed.
 });
 
-// Save all settings
+// Save all settings. The AI engine, model, laptop address and any key typed here go to
+// the Drive Apps Script — nothing AI-related is stored in this browser. Only the Drive
+// endpoint override (an address, not a secret) is still kept per device.
 $('saveKeyBtn').addEventListener('click', async () => {
     const provider = $('aiProviderSelect').value;
-    const gKey  = $('geminiKeyInput').value.trim();
     const gModel = $('geminiModelSelect').value;
-    const oKey  = $('openaiKeyInput').value.trim();
-    const cKey  = $('claudeKeyInput').value.trim();
-    const dsKey = $('deepseekKeyInput').value.trim();
-    const lUrl  = $('localUrlInput').value.trim();
-    const lCode = $('localCodeInput').value.trim();
+    const lUrl  = $('localUrlInput').value.trim().replace(/\/+$/, '');
     const gas   = $('gasUrlInput').value.trim();
+    const typed = {
+        gemini: $('geminiKeyInput').value.trim(), openai: $('openaiKeyInput').value.trim(),
+        claude: $('claudeKeyInput').value.trim(), deepseek: $('deepseekKeyInput').value.trim(),
+        local: $('localCodeInput').value.trim()
+    };
+    const status = $('keyStatus');
+    status.style.color = '';
     try {
-        localStorage.setItem(AI_PROVIDER_STORE, provider);
-        if (gKey) localStorage.setItem(GEMINI_KEY_STORE, gKey); else localStorage.removeItem(GEMINI_KEY_STORE);
-        localStorage.setItem(GEMINI_MODEL_STORE, gModel);
-        if (oKey) localStorage.setItem(OPENAI_KEY_STORE, oKey); else localStorage.removeItem(OPENAI_KEY_STORE);
-        if (cKey) localStorage.setItem(CLAUDE_KEY_STORE, cKey); else localStorage.removeItem(CLAUDE_KEY_STORE);
-        // Store the address only when it differs from the built-in one, so a
-        // future change to DEFAULT_LOCAL_URL reaches browsers that never
-        // deliberately overrode it.
-        if (lUrl && lUrl.replace(/\/+$/, '') !== DEFAULT_LOCAL_URL) localStorage.setItem(LOCAL_URL_STORE, lUrl); else localStorage.removeItem(LOCAL_URL_STORE);
-        if (lCode) localStorage.setItem(LOCAL_CODE_STORE, lCode); else localStorage.removeItem(LOCAL_CODE_STORE);
-        if (dsKey) localStorage.setItem(DEEPSEEK_KEY_STORE, dsKey); else localStorage.removeItem(DEEPSEEK_KEY_STORE);
-        if (gas)  localStorage.setItem(GAS_URL_STORE, gas);     else localStorage.removeItem(GAS_URL_STORE);
+        if (gas) localStorage.setItem(GAS_URL_STORE, gas); else localStorage.removeItem(GAS_URL_STORE);
         driveBtn.disabled = !state.file;   // clickable whenever a PDF is loaded; click guides to Settings if no URL
-    } catch { $('keyStatus').textContent = 'Storage error'; return; }
+    } catch { status.textContent = 'Storage error'; return; }
 
-    // Send the engine choice to every device. Only when it actually changed, so saving
-    // a key does not need the network.
+    // Keys to send: whatever was typed, plus a key an older version left in this browser
+    // that the server does not have yet (moved once, then deleted here).
     const shared = getSharedAi();
-    const changed = !shared || shared.provider !== provider || (shared.geminiModel || '') !== gModel;
-    if (!changed) {
-        $('keyStatus').textContent = '✓ Saved';
-        setTimeout(() => { $('keyStatus').textContent = ''; $('settingsOverlay').classList.remove('open'); }, 900);
+    const keys = {};
+    Object.keys(typed).forEach(p => {
+        const onServer = !!(shared && shared.proxy && shared.keys && shared.keys[p]);
+        const k = typed[p] || (!onServer ? legacyKey(p) : '');
+        if (k) keys[p] = k;
+    });
+    const sameEngine = shared && shared.proxy && shared.provider === provider
+        && (shared.geminiModel || '') === gModel && (shared.localUrl || DEFAULT_LOCAL_URL) === (lUrl || DEFAULT_LOCAL_URL);
+    if (sameEngine && !Object.keys(keys).length) {
+        status.textContent = '✓ Saved';
+        setTimeout(() => { status.textContent = ''; $('settingsOverlay').classList.remove('open'); }, 900);
         refreshSettingsUI();
         return;
     }
 
     const saveBtn = $('saveKeyBtn');
     saveBtn.disabled = true;
-    $('keyStatus').style.color = '';
-    $('keyStatus').textContent = '⟳ Switching every device to ' + aiProviderName(provider) + '…';
+    status.textContent = '⟳ Saving on the server…';
     let res;
     try {
         const r = await fetch(getGasUrl(), {
@@ -1867,7 +1913,9 @@ $('saveKeyBtn').addEventListener('click', async () => {
                 type: 'setAiConfig',
                 token: (() => { try { return sessionStorage.getItem(CEO_STORE) || ''; } catch (e) { return ''; } })(),
                 provider: provider,
-                geminiModel: gModel
+                geminiModel: gModel,
+                localUrl: lUrl,
+                keys: keys
             })
         });
         res = await r.json();
@@ -1877,23 +1925,23 @@ $('saveKeyBtn').addEventListener('click', async () => {
     saveBtn.disabled = false;
 
     if (res && res.success) {
-        try { localStorage.setItem(AI_SHARED_STORE, JSON.stringify({ provider: res.provider, geminiModel: res.geminiModel || '', updatedAt: res.updatedAt || '' })); } catch (e) {}
+        storeSharedAi(res);                 // also deletes any old browser copy of a key the server now holds
         sharedAiCheckedAt = Date.now();
-        $('keyStatus').textContent = '✓ Saved — every device now uses ' + aiProviderName(res.provider);
-        refreshSettingsUI();
-        setTimeout(() => { $('keyStatus').textContent = ''; $('settingsOverlay').classList.remove('open'); }, 2200);
+        const sent = Object.keys(keys).length;
+        status.textContent = '✓ Saved on the server — every device now uses ' + aiProviderName(res.provider)
+            + (sent ? ' (' + sent + ' key' + (sent > 1 ? 's' : '') + ' stored)' : '');
+        refreshSettingsUI();                // empties the key fields
+        setTimeout(() => { status.textContent = ''; $('settingsOverlay').classList.remove('open'); }, 2400);
         return;
     }
-    // Not shared. Do not pretend it was: the modal stays open with the reason.
+    // Nothing was saved. Say so, and keep the modal open with the reason.
     if (res && res.code === 'unauthorized') setCeoUnlocked('');
-    // An older Drive script (before v12) does not know this request and answers with
-    // an upload error — say what to do rather than showing that.
+    // A Drive script older than v12 does not know this request and answers with an
+    // upload error — say what to do rather than showing that.
     const reason = (res && res.code) ? res.error
-                 : 'The Google Drive script needs updating to v12 before the engine can be shared.';
-    // With a shared choice already in force, this device keeps following it, so the
-    // switch did not happen anywhere. Without one, the choice applies here only.
-    $('keyStatus').style.color = '#f59e0b';
-    $('keyStatus').textContent = (shared ? '⚠ Engine NOT changed — ' : '⚠ Saved on this device only — ') + reason;
+                 : 'the Google Drive script must be updated to v12 first (keys are no longer kept in the browser).';
+    status.style.color = '#f59e0b';
+    status.textContent = '⚠ Not saved — ' + reason;
 });
 
 // Init settings button state on load
@@ -2231,7 +2279,7 @@ async function deepseekVisionCall(apiKey, prompt, base64Image) {
 // The laptop's own model, through the gateway. Speaks the OpenAI shape, so the
 // image travels as a data URL exactly as it does for OpenAI above.
 async function localVisionCall(prompt, base64Image) {
-    const code = getLocalCode();
+    const code = legacyKey('local');
     if (!code) throw new Error('IBI Local — no access code saved. Open ⚙ Settings and paste the gateway access code.');
 
     let response;
@@ -2273,16 +2321,40 @@ async function localVisionCall(prompt, base64Image) {
     return text;
 }
 
-// Unified vision dispatcher — routes to the provider chosen in Settings.
-async function aiVisionScan(prompt, base64Image) {
+// Unified vision dispatcher. `kind` ('manifest' | 'document') names the scan: the
+// server runs only its own copy of that instruction, with the key it holds.
+async function aiVisionScan(prompt, base64Image, kind) {
     await refreshSharedAiConfig();                     // use the engine in force NOW
     if (!hasAiKey()) throw new Error(missingAiKeyMessage());
+    if (serverAiReady()) return serverVisionScan(kind, base64Image);
+
+    // ⏳ Until the Drive script is updated to v12 only: an older key still sitting in
+    // this browser keeps scans working. Nothing new is ever saved here, and these
+    // keys are deleted the moment the server holds them (purgeLegacyKeys).
     const provider = getAiProvider();
-    if (provider === 'openai') return openaiVisionCall(getOpenaiKey(), prompt, base64Image);
-    if (provider === 'claude') return claudeVisionCall(getClaudeKey(), prompt, base64Image);
-    if (provider === 'deepseek') return deepseekVisionCall(getDeepseekKey(), prompt, base64Image);
+    if (provider === 'openai') return openaiVisionCall(legacyKey('openai'), prompt, base64Image);
+    if (provider === 'claude') return claudeVisionCall(legacyKey('claude'), prompt, base64Image);
+    if (provider === 'deepseek') return deepseekVisionCall(legacyKey('deepseek'), prompt, base64Image);
     if (provider === 'local') return localVisionCall(prompt, base64Image);
-    return geminiVisionCall(getGeminiKey(), getGeminiModel(), prompt, base64Image);
+    return geminiVisionCall(legacyKey('gemini'), getGeminiModel(), prompt, base64Image);
+}
+
+// The scan itself runs on the Drive Apps Script. The page sends only the page image.
+async function serverVisionScan(kind, base64Image) {
+    let res;
+    try {
+        const r = await fetch(getGasUrl(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // no CORS preflight
+            body: JSON.stringify({ type: 'aiScan', kind: kind, image: base64Image })
+        });
+        res = await r.json();
+    } catch (e) {
+        throw new Error('Could not reach the AI service on Google Drive. Check the internet connection and try again.');
+    }
+    if (res && res.success) return String(res.text || '');
+    if (res && res.code === 'no_key') refreshSharedAiConfig(true);   // server knows better than our cache
+    throw new Error((res && res.error) || 'The AI scan failed.');
 }
 
 // Call Gemini Vision API with a manifest page image.
@@ -2301,7 +2373,7 @@ Analyse the page carefully and return ONLY a valid JSON object with these fields
 
 Return ONLY the JSON object. No markdown, no explanation, no code blocks.`;
 
-    const raw = await aiVisionScan(prompt, base64Image);
+    const raw = await aiVisionScan(prompt, base64Image, 'manifest');
     return parseGeminiJson(raw);
 }
 
@@ -2325,7 +2397,7 @@ Extract the details and return ONLY a valid JSON object (no markdown, no code fe
 
 Hints: Amazon invoice shows 'Amazon.in', ASIN like B0XXXXXXXX. Meesho shows 'Pickup Executive Signature', 'Free Size', 14-digit AWB. Flipkart/Shopsy show 'E-Kart Logistics', 'OD...' order ids and 'HBD'. ShopClues shows 'Powered by ShopClues.com', 'Ref:'. Count manifest rows by the S.No column. Return ONLY the JSON.`;
 
-    const raw = await aiVisionScan(prompt, base64Image);
+    const raw = await aiVisionScan(prompt, base64Image, 'document');
     return parseGeminiJson(raw);
 }
 

@@ -13,10 +13,15 @@
  *     DeepSeek / IBI Local) is stored here and read by every browser, so a switch
  *     made on one PC reaches the staff laptops by itself. Reading is public
  *     (?action=aiConfig); changing needs a genuine CEO Auth token
- *     ({type:'setAiConfig', token, provider, geminiModel}). Keys and the Local AI
- *     access code are NOT stored here — they stay in each browser.
+ *     ({type:'setAiConfig', token, provider, geminiModel, localUrl, keys}).
+ *   • API KEYS AND THE LOCAL AI ACCESS CODE LIVE HERE, NOT IN ANY BROWSER. They are
+ *     kept in Script Properties (AI_KEY_GEMINI, AI_KEY_OPENAI, AI_KEY_CLAUDE,
+ *     AI_KEY_DEEPSEEK, AI_KEY_LOCAL) and never sent out — the website is only told
+ *     whether each one is set. Every AI scan runs from this script ({type:'aiScan',
+ *     kind, image}), which adds the key itself. Only the Re-Namer's two scans are
+ *     accepted, capped at AI_SCANS_PER_HOUR, because this address is public.
  *   • First deploy of v12 asks for one extra permission ("Connect to an external
- *     service") — that is the call to IBI CEO Auth that checks the token.
+ *     service") — the calls to IBI CEO Auth and to the AI engines.
  *
  *  WHAT'S NEW IN v10:
  *   • The duplicate check now also catches the same order saved TODAY under a DIFFERENT
@@ -133,6 +138,10 @@ function doPost(e) {
     // ── CEO sets the AI engine for EVERY device (v12) ──
     if (String(body.type || '').trim().toLowerCase() === 'setaiconfig') {
       return json(setAiConfig(body));
+    }
+    // ── AI scan with the keys held here (v12) ──
+    if (String(body.type || '').trim().toLowerCase() === 'aiscan') {
+      return json(aiScan(body));
     }
 
     // ── Read-only ordinal lookup (writes nothing, so it skips all the save logic) ──
@@ -389,12 +398,28 @@ function doGet(e) {
 const CEO_AUTH_URL = 'https://script.google.com/macros/s/AKfycbxIW4j7m51JjX6yt38-a1X6XrDRyZp3czMYN8eXECfP9H2twjfrgLaozWCCl843AgWo0g/exec';
 const AI_PROVIDERS = ['gemini', 'openai', 'claude', 'deepseek', 'local'];
 
+// API keys and the Local AI access code live ONLY here, in Script Properties.
+// No browser ever receives them: readAiConfig reports whether each one is set, and
+// every AI scan runs from this script (aiScan), which adds the key itself.
+const AI_KEY_PROPS = { gemini: 'AI_KEY_GEMINI', openai: 'AI_KEY_OPENAI', claude: 'AI_KEY_CLAUDE', deepseek: 'AI_KEY_DEEPSEEK', local: 'AI_KEY_LOCAL' };
+const DEFAULT_LOCAL_URL = 'https://ai-local.indiabusinessinternational.online';
+// This endpoint is public (its address is in the website), so it will only run the
+// Re-Namer's own two scans, on one image, a limited number of times an hour — nobody
+// can use it as a free general-purpose AI on the company's keys or laptop.
+const AI_SCANS_PER_HOUR = 300;
+const AI_MAX_IMAGE_CHARS = 6000000;   // ~4.5 MB JPEG as base64
+
 function readAiConfig() {
   const props = PropertiesService.getScriptProperties();
   const provider = props.getProperty('AI_PROVIDER') || '';
+  const keys = {};
+  AI_PROVIDERS.forEach(function (p) { keys[p] = !!props.getProperty(AI_KEY_PROPS[p]); });
   return {
     provider: AI_PROVIDERS.indexOf(provider) > -1 ? provider : '',
     geminiModel: props.getProperty('AI_GEMINI_MODEL') || '',
+    localUrl: props.getProperty('AI_LOCAL_URL') || '',
+    keys: keys,          // true/false only — never the key
+    proxy: true,         // AI scans run here (type:'aiScan')
     updatedAt: props.getProperty('AI_UPDATED_AT') || ''
   };
 }
@@ -408,11 +433,15 @@ function ceoTokenIsValid(token) {
   return out && out.ok === true;
 }
 
+// body: { token, provider?, geminiModel?, localUrl?, keys?: {gemini:'…', …}, clearKeys?: ['openai', …] }
+// A key left blank is left as it is; only clearKeys removes one.
 function setAiConfig(body) {
   const provider = String(body.provider || '').trim().toLowerCase();
   const geminiModel = String(body.geminiModel || '').trim();
-  if (AI_PROVIDERS.indexOf(provider) < 0) return { success: false, code: 'bad_provider', error: 'Unknown AI engine: ' + provider };
+  const localUrl = String(body.localUrl || '').trim().replace(/\/+$/, '');
+  if (provider && AI_PROVIDERS.indexOf(provider) < 0) return { success: false, code: 'bad_provider', error: 'Unknown AI engine: ' + provider };
   if (geminiModel && !/^[\w.\-]{1,60}$/.test(geminiModel)) return { success: false, code: 'bad_model', error: 'Invalid Gemini model name.' };
+  if (localUrl && !/^https:\/\/[\w.\-]+(:\d+)?$/.test(localUrl)) return { success: false, code: 'bad_url', error: 'The laptop address must be an https:// address (this script cannot reach localhost).' };
 
   let valid;
   try { valid = ceoTokenIsValid(body.token); }
@@ -421,9 +450,205 @@ function setAiConfig(body) {
 
   const props = PropertiesService.getScriptProperties();
   const now = new Date().toISOString();
-  props.setProperties({ AI_PROVIDER: provider, AI_GEMINI_MODEL: geminiModel, AI_UPDATED_AT: now });
-  return { success: true, provider: provider, geminiModel: geminiModel, updatedAt: now };
+  const update = { AI_UPDATED_AT: now };
+  if (provider) { update.AI_PROVIDER = provider; update.AI_GEMINI_MODEL = geminiModel; }
+  if ('localUrl' in body) {
+    if (localUrl && localUrl !== DEFAULT_LOCAL_URL) update.AI_LOCAL_URL = localUrl;
+    else props.deleteProperty('AI_LOCAL_URL');
+  }
+  const keys = body.keys || {};
+  AI_PROVIDERS.forEach(function (p) {
+    const k = String(keys[p] || '').trim();
+    if (k && k.length <= 400) update[AI_KEY_PROPS[p]] = k;
+  });
+  props.setProperties(update);
+  (body.clearKeys || []).forEach(function (p) { if (AI_KEY_PROPS[p]) props.deleteProperty(AI_KEY_PROPS[p]); });
+  return Object.assign({ success: true }, readAiConfig());
 }
+
+// ─── AI SCAN (runs here so no key ever reaches a browser) ────────
+// body: { type:'aiScan', kind:'manifest'|'document', image:<base64 JPEG> }
+// reply: { success, text, provider } — text is the engine's raw answer (JSON as text).
+function aiScan(body) {
+  const kind = String(body.kind || '');
+  const prompt = AI_PROMPTS[kind];
+  if (!prompt) return { success: false, code: 'bad_kind', error: 'Unknown scan type.' };
+  const image = String(body.image || '');
+  if (!image || image.length > AI_MAX_IMAGE_CHARS || !/^[A-Za-z0-9+\/=]+$/.test(image.slice(0, 200))) {
+    return { success: false, code: 'bad_image', error: 'The page image is missing or too large.' };
+  }
+
+  const cache = CacheService.getScriptCache();
+  const hourKey = 'ai_scans_' + Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyyMMddHH');
+  const used = parseInt(cache.get(hourKey) || '0', 10);
+  if (used >= AI_SCANS_PER_HOUR) {
+    return { success: false, code: 'rate_limited', error: 'AI scan limit reached for this hour (' + AI_SCANS_PER_HOUR + '). Fill the fields by hand or try again next hour.' };
+  }
+  cache.put(hourKey, String(used + 1), 3700);
+
+  const props = PropertiesService.getScriptProperties();
+  const provider = props.getProperty('AI_PROVIDER') || 'gemini';
+  const key = props.getProperty(AI_KEY_PROPS[provider]) || '';
+  if (!key) {
+    return { success: false, code: 'no_key', provider: provider, error: 'No ' + AI_ENGINE_NAMES[provider] + ' ' + (provider === 'local' ? 'access code' : 'API key') + ' is saved on the server yet — the CEO needs to add it once in ⚙ Settings.' };
+  }
+  try {
+    let text;
+    if (provider === 'openai')        text = aiOpenAiCompatible_('OpenAI', 'https://api.openai.com/v1/chat/completions', key, ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini'], prompt, image, {});
+    else if (provider === 'deepseek') text = aiOpenAiCompatible_('DeepSeek', 'https://api.deepseek.com/chat/completions', key, ['deepseek-flash', 'deepseek-v4-pro'], prompt, image, { thinking: { type: 'disabled' } });
+    else if (provider === 'claude')   text = aiClaude_(key, prompt, image);
+    else if (provider === 'local')    text = aiLocal_(key, props.getProperty('AI_LOCAL_URL') || DEFAULT_LOCAL_URL, prompt, image);
+    else                              text = aiGemini_(key, props.getProperty('AI_GEMINI_MODEL') || '', prompt, image);
+    return { success: true, provider: provider, text: text };
+  } catch (err) {
+    return { success: false, code: 'engine_error', provider: provider, error: String(err && err.message ? err.message : err) };
+  }
+}
+
+const AI_ENGINE_NAMES = { gemini: 'Google Gemini', openai: 'OpenAI', claude: 'Anthropic Claude', deepseek: 'DeepSeek', local: 'IBI Local AI' };
+
+function aiFetch_(url, headers, payload) {
+  const res = UrlFetchApp.fetch(url, {
+    method: 'post', contentType: 'application/json', headers: headers,
+    payload: JSON.stringify(payload), muteHttpExceptions: true
+  });
+  let data = {};
+  try { data = JSON.parse(res.getContentText()); } catch (e) {}
+  return { status: res.getResponseCode(), data: data, raw: res.getContentText() };
+}
+
+function aiErrMsg_(r) {
+  return (r.data && r.data.error && (r.data.error.message || r.data.error)) || ('HTTP ' + r.status);
+}
+
+// Gemini, with the same model fallback the website used.
+function aiGemini_(key, preferred, prompt, image) {
+  const chain = [preferred, 'gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash']
+    .filter(function (m, i, a) { return m && a.indexOf(m) === i; });
+  let last = '', quota = false;
+  for (let i = 0; i < chain.length; i++) {
+    const r = aiFetch_('https://generativelanguage.googleapis.com/v1beta/models/' + chain[i] + ':generateContent',
+      { 'x-goog-api-key': key },
+      { contents: [{ parts: [{ inline_data: { mime_type: 'image/jpeg', data: image } }, { text: prompt }] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 600 } });
+    if (r.status === 200) {
+      const c = r.data.candidates && r.data.candidates[0];
+      return String((c && c.content && c.content.parts && c.content.parts[0] && c.content.parts[0].text) || '').trim();
+    }
+    const msg = String(aiErrMsg_(r));
+    if (r.status === 429 || r.status === 404 || /limit:\s*0|quota|not\s+found|not\s+supported/i.test(msg)) {
+      quota = quota || r.status === 429; last = chain[i] + ': ' + msg; continue;
+    }
+    throw new Error('Gemini ' + r.status + ': ' + msg);
+  }
+  if (quota) throw new Error('Gemini free-tier quota exhausted on all models. Wait ~1 min and retry, or the CEO can switch engine.');
+  throw new Error(last || 'All Gemini models failed.');
+}
+
+// OpenAI and DeepSeek share the OpenAI request shape.
+function aiOpenAiCompatible_(name, url, key, chain, prompt, image, extra) {
+  let last = '';
+  for (let i = 0; i < chain.length; i++) {
+    const r = aiFetch_(url, { Authorization: 'Bearer ' + key }, Object.assign({
+      model: chain[i], temperature: 0, max_tokens: 600,
+      messages: [{ role: 'user', content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + image } }
+      ] }]
+    }, extra));
+    if (r.status === 200) {
+      const ch = r.data.choices && r.data.choices[0];
+      return String((ch && ch.message && ch.message.content) || '').trim();
+    }
+    const msg = String(aiErrMsg_(r));
+    if (r.status === 404 || r.status === 429 || /model|does not exist|not found|quota|rate/i.test(msg)) { last = chain[i] + ': ' + msg; continue; }
+    throw new Error(name + ' ' + r.status + ': ' + msg);
+  }
+  throw new Error(name + ' — ' + (last || 'all models failed.'));
+}
+
+function aiClaude_(key, prompt, image) {
+  const chain = ['claude-haiku-4-5', 'claude-sonnet-4-6', 'claude-opus-4-8'];
+  let last = '';
+  for (let i = 0; i < chain.length; i++) {
+    const r = aiFetch_('https://api.anthropic.com/v1/messages', { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, {
+      model: chain[i], max_tokens: 600,
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
+        { type: 'text', text: prompt }
+      ] }]
+    });
+    if (r.status === 200) {
+      const c = r.data.content && r.data.content[0];
+      return String((c && c.text) || '').trim();
+    }
+    const msg = String(aiErrMsg_(r));
+    if (r.status === 404 || r.status === 429 || r.status === 529 || /model|not_found|not found|overloaded|rate/i.test(msg)) { last = chain[i] + ': ' + msg; continue; }
+    throw new Error('Claude ' + r.status + ': ' + msg);
+  }
+  throw new Error('Claude — ' + (last || 'all models failed.'));
+}
+
+// The laptop engine through its gateway. The access code goes in x-ibi-access,
+// added here — the gateway accepts server calls that carry no Origin header.
+// ⚠ Apps Script gives an outside call about a minute; a cold laptop can exceed it.
+function aiLocal_(code, baseUrl, prompt, image) {
+  let r;
+  try {
+    r = aiFetch_(baseUrl + '/v1/chat/completions', { 'x-ibi-access': code }, {
+      model: 'qwen3.5:4b', max_tokens: 2048, temperature: 0,
+      reasoning_effort: 'none',   // without this the model thinks and the answer comes back EMPTY
+      messages: [{ role: 'user', content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + image } }
+      ] }]
+    });
+  } catch (err) {
+    const m = String(err && err.message ? err.message : err);
+    if (/timeout|timed out/i.test(m)) throw new Error('IBI Local took too long to answer (the laptop may be busy or just waking). Try again, or the CEO can switch engine.');
+    throw new Error('IBI Local — could not reach the laptop. It must be switched on and awake. (' + m + ')');
+  }
+  if (r.status === 401) throw new Error('IBI Local — the access code saved on the server was refused. The CEO needs to re-enter it in ⚙ Settings.');
+  if (r.status === 403) throw new Error('IBI Local — the laptop gateway refused this request.');
+  if (r.status !== 200) throw new Error('IBI Local ' + r.status + ': ' + String(r.raw || '').slice(0, 200));
+  const ch = r.data.choices && r.data.choices[0];
+  const text = String((ch && ch.message && ch.message.content) || '').trim();
+  if (!text) throw new Error('IBI Local returned an empty answer — try Gemini for this page.');
+  return text;
+}
+
+// The only two instructions this endpoint will run. Kept word-for-word with the
+// website's versions.
+const AI_PROMPTS = {
+  manifest: `This is a shipping manifest PDF page from India Business International, an Indian eCommerce seller.
+
+Analyse the page carefully and return ONLY a valid JSON object with these fields:
+
+{
+  "orderCount": <integer — count data rows in the shipment table, NOT the header row. Look for S.No. column: 1, 2, 3... The highest S.No. number = orderCount>,
+  "date": "<string — date in DD-MM-YYYY format from the 'Date :' label, e.g. 29-05-2026. Return null if not found>",
+  "platform": "<string — one of: Meesho, Amazon, Flipkart, Shopsy, ShopClues. Infer from the manifest format. Meesho manifests have 'Pickup Executive Signature', 'Free Size', and 14-digit AWB numbers. Return null if unknown>",
+  "courier": "<string — courier name from 'Courier :' label, e.g. Delhivery. Return null if not found>"
+}
+
+Return ONLY the JSON object. No markdown, no explanation, no code blocks.`,
+  document: `You are reading an eCommerce shipping document for the seller "India Business International" (brand iINTELLIGENCEi / IBI). It may be a Tax Invoice, a Shipping Label, or both combined (Amazon often prints the shipping label on the LEFT and the tax invoice on the RIGHT). Platform is one of: Amazon, Flipkart, Shopsy, Meesho, ShopClues.
+
+Extract the details and return ONLY a valid JSON object (no markdown, no code fences):
+
+{
+  "docType": "invoice" or "manifest" — "manifest" if it is a multi-row pickup/handover list (Courier, S.No table); otherwise "invoice",
+  "platform": "Amazon" | "Flipkart" | "Shopsy" | "Meesho" | "ShopClues" | null,
+  "product": "<core product name ONLY — keep material + type + head noun, REMOVE every marketing adjective (e.g. drop 'Anti-Slip', 'Natural', 'Premium', 'Coconut Fiber', 'Entrance', 'Welcome', 'Heavy Duty'). APPEND the size (Small/Medium/Large/XL) or dimensions (e.g. '60x40 cm', '11.5 L') whenever shown — prefer the size in the SKU. Example: 'Coir Door Mat Small'. No quantity words. null for manifests>",
+  "quantity": <integer total quantity of the product, null if unknown>,
+  "orderCount": <integer number of orders/shipment rows, only for manifests, else null>,
+  "invoiceDate": "<the INVOICE DATE in DD-MM-YYYY format. This is labelled 'Invoice Date' (on Amazon it is on the RIGHT side, just below 'Invoice Details'). NEVER use 'Order Date'. null if not found>",
+  "shipDate": "<the SHIP DATE / pickup date in DD-MM-YYYY format. On Amazon it is in the shipping label (LEFT side) labelled 'Ship Date:' just under the Order Id. On Flipkart/Shopsy it is the HBD date. null if there is no shipping label / not found>",
+  "colorVariant": "<color name if the product has a colour variant mentioned in the description, e.g. 'Navy Blue', 'Red', 'Dark Green'. null if not mentioned>"
+}
+
+Hints: Amazon invoice shows 'Amazon.in', ASIN like B0XXXXXXXX. Meesho shows 'Pickup Executive Signature', 'Free Size', 14-digit AWB. Flipkart/Shopsy show 'E-Kart Logistics', 'OD...' order ids and 'HBD'. ShopClues shows 'Powered by ShopClues.com', 'Ref:'. Count manifest rows by the S.No column. Return ONLY the JSON.`
+};
 
 function listRecentFiles(days) {
   const root = getFolderOrNull(DriveApp.getRootFolder(), ROOT_FOLDER_NAME);

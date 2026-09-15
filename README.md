@@ -1,6 +1,6 @@
-# IBI File Re-Namer v4.98
+# IBI File Re-Namer v4.99
 
-The AI engine the CEO picks in Settings now applies to every device (Drive script v12).
+The AI engine the CEO picks in Settings applies to every device, and API keys / the Local AI code live only on the Drive Apps Script (v12), never in a browser.
 
 # FileRe-Namer
 FileRe-Namer renames the PDF Files that is uploaded.
