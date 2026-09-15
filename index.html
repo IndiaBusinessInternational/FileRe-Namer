@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v5.1</title>
+    <title>IBI File Re-Namer v5.2</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -941,7 +941,24 @@
             max-width: 420px;
             padding: 28px 24px 24px;
             position: relative;
+            /* Never taller than the screen, at any zoom: title and buttons stay put,
+               only .modal-body scrolls. Without this the window ran off the top and
+               bottom of a laptop screen at 100% and Save All could not be reached. */
+            max-height: calc(100vh - 32px);
+            max-height: calc(100dvh - 32px);
+            display: flex;
+            flex-direction: column;
         }
+        .settings-modal > * { flex-shrink: 0; }
+        .settings-modal > .modal-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            margin: 0 -24px;
+            padding: 0 24px;
+        }
+        .settings-modal > .modal-body > .modal-subtitle:last-child { margin-bottom: 0; }
         .settings-modal h3 {
             margin: 0 0 6px;
             font-size: 16px;
@@ -1000,8 +1017,15 @@
         .modal-save-row {
             display: flex;
             align-items: center;
+            flex-wrap: wrap;
             gap: 10px;
-            margin-top: 20px;
+            margin-top: 0;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+        .modal-save-row .key-status { flex: 1 1 160px; min-width: 0; }
+        @media (max-width: 430px) {
+            .modal-save-row button { width: 100%; padding: 12px 22px; }
         }
         .modal-save-row button {
             padding: 9px 22px;
@@ -1066,7 +1090,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.1">v5.1</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.2">v5.2</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1290,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.1</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.2</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1275,6 +1299,9 @@
             <button class="modal-close" id="modalClose">✕</button>
             <h3>⚙ Settings</h3>
             <p class="modal-subtitle">Configure the AI scanner (reads image-based PDFs) and Google Drive upload.</p>
+
+            <!-- Only this part scrolls: the title above and Save All below stay on screen at any zoom. -->
+            <div class="modal-body">
 
             <!-- ── AI SCANNER SECTION ── -->
             <div style="font-size:13px;font-weight:700;color:var(--accent-color);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;">
@@ -1390,6 +1417,7 @@
                     Files are saved to: <strong>IBI Daily Orders / Orders DD Mon YYYY /</strong>
                 </p>
             </div>
+            </div><!-- /.modal-body -->
 
             <div class="modal-save-row">
                 <button id="saveKeyBtn">Save All</button>
@@ -1420,7 +1448,7 @@
     <div class="modal-overlay" id="conflictOverlay">
         <div class="settings-modal" style="max-width:430px;">
             <h3 id="conflictTitle">⚠ This file already exists</h3>
-            <p class="modal-subtitle" id="conflictMsg"></p>
+            <div class="modal-body"><p class="modal-subtitle" id="conflictMsg"></p></div>
             <div class="conflict-actions">
                 <button class="conflict-btn conflict-overwrite" id="conflictOverwriteBtn">Overwrite<small id="conflictOverwriteHint">Replace the existing file</small></button>
                 <button class="conflict-btn conflict-rename" id="conflictRenameBtn"><span id="conflictRenameLabel">Rename — keep both</span><small id="conflictRenameHint">Save as a numbered copy</small></button>
@@ -1850,6 +1878,14 @@ new MutationObserver(() => {
 // Settings modal open / close
 $('settingsBtn').addEventListener('click', requestSettings);
 $('modalClose').addEventListener('click', () => $('settingsOverlay').classList.remove('open'));
+// Esc closes the top-most open window, as in every other app. On the duplicate-file
+// prompt it presses Cancel, so the pending upload gets its answer.
+document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if ($('conflictOverlay').classList.contains('open'))      { e.preventDefault(); $('conflictCancelBtn').click(); }
+    else if (ceoOverlay.classList.contains('open'))           { e.preventDefault(); ceoOverlay.classList.remove('open'); }
+    else if ($('settingsOverlay').classList.contains('open')) { e.preventDefault(); $('settingsOverlay').classList.remove('open'); }
+});
 $('settingsOverlay').addEventListener('click', e => { if (e.target === $('settingsOverlay')) $('settingsOverlay').classList.remove('open'); });
 
 // Provider dropdown → show matching key fields
