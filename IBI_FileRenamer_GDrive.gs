@@ -1,5 +1,5 @@
 /**
- * IBI File Re-Namer — Google Drive Upload Endpoint  (v10 — duplicate check covers renamed products)
+ * IBI File Re-Namer — Google Drive Upload Endpoint  (v12 — one AI engine for every device)
  * Google Apps Script (GAS) Web App
  *
  * ══════════════════════════════════════════════════════════════════════
@@ -7,6 +7,16 @@
  *     Deploy ▸ Manage deployments ▸ (pencil ✏️) ▸ Version: New version ▸ Deploy
  *     Otherwise Google keeps running the OLD code.
  * ══════════════════════════════════════════════════════════════════════
+ *
+ *  WHAT'S NEW IN v12:
+ *   • ONE AI ENGINE FOR EVERY DEVICE. The CEO's choice (Gemini / OpenAI / Claude /
+ *     DeepSeek / IBI Local) is stored here and read by every browser, so a switch
+ *     made on one PC reaches the staff laptops by itself. Reading is public
+ *     (?action=aiConfig); changing needs a genuine CEO Auth token
+ *     ({type:'setAiConfig', token, provider, geminiModel}). Keys and the Local AI
+ *     access code are NOT stored here — they stay in each browser.
+ *   • First deploy of v12 asks for one extra permission ("Connect to an external
+ *     service") — that is the call to IBI CEO Auth that checks the token.
  *
  *  WHAT'S NEW IN v10:
  *   • The duplicate check now also catches the same order saved TODAY under a DIFFERENT
@@ -119,6 +129,11 @@ function doPost(e) {
     if (!e || !e.postData || !e.postData.contents) throw new Error('No POST data received');
 
     const body = JSON.parse(e.postData.contents);
+
+    // ── CEO sets the AI engine for EVERY device (v12) ──
+    if (String(body.type || '').trim().toLowerCase() === 'setaiconfig') {
+      return json(setAiConfig(body));
+    }
 
     // ── Read-only ordinal lookup (writes nothing, so it skips all the save logic) ──
     if (String(body.type || '').trim().toLowerCase() === 'ordinal') {
@@ -341,11 +356,99 @@ function doPost(e) {
   }
 }
 
-function doGet() {
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  // ?action=list[&days=3] → files saved in the most recent "Orders <date>" folders,
+  // read by IBI Staff Supervision so renaming work shows on the dashboard.
+  // Names, folder and Drive created-times only — no contents, no URLs.
+  if (p.action === 'list') {
+    try { return json({ success: true, items: listRecentFiles(parseInt(p.days || '3', 10)) }); }
+    catch (err) { return json({ success: false, error: err.toString() }); }
+  }
+  // ?action=aiConfig → the AI engine the CEO chose for every device. Only the
+  // CHOICE is shared — never a key or access code (this endpoint is public).
+  if (p.action === 'aiConfig') {
+    try { return json(Object.assign({ success: true }, readAiConfig())); }
+    catch (err) { return json({ success: false, error: err.toString() }); }
+  }
   return json({
     status: 'active', rootFolder: ROOT_FOLDER_NAME, keepDays: KEEP_DAYS,
-    version: 10, conflictPrompt: true, idempotent: true, orderNumbering: true, hashIdentity: true, crossFolderDuplicateCheck: true
+    version: 12, conflictPrompt: true, idempotent: true, orderNumbering: true, hashIdentity: true, crossFolderDuplicateCheck: true,
+    list: true, aiConfig: true
   });
+}
+
+// ─── SHARED AI ENGINE (v12) ─────────────────────────────────────
+// The website used to keep the AI engine choice in each browser, so switching to
+// Local AI on the CEO's PC changed nothing on a staff laptop. The choice now lives
+// here, in Script Properties, and every device reads it.
+//
+// Changing it needs the signed token the IBI CEO Auth script hands out when the CEO
+// PIN is entered. This script asks CEO Auth whether the token is genuine and
+// unexpired (checkToken) — the PIN itself never reaches this project.
+const CEO_AUTH_URL = 'https://script.google.com/macros/s/AKfycbxIW4j7m51JjX6yt38-a1X6XrDRyZp3czMYN8eXECfP9H2twjfrgLaozWCCl843AgWo0g/exec';
+const AI_PROVIDERS = ['gemini', 'openai', 'claude', 'deepseek', 'local'];
+
+function readAiConfig() {
+  const props = PropertiesService.getScriptProperties();
+  const provider = props.getProperty('AI_PROVIDER') || '';
+  return {
+    provider: AI_PROVIDERS.indexOf(provider) > -1 ? provider : '',
+    geminiModel: props.getProperty('AI_GEMINI_MODEL') || '',
+    updatedAt: props.getProperty('AI_UPDATED_AT') || ''
+  };
+}
+
+function ceoTokenIsValid(token) {
+  if (!token || typeof token !== 'string' || token.length > 200) return false;
+  const res = UrlFetchApp.fetch(CEO_AUTH_URL + '?action=checkToken&token=' + encodeURIComponent(token),
+                                { muteHttpExceptions: true, followRedirects: true });
+  if (res.getResponseCode() !== 200) throw new Error('CEO verification service answered ' + res.getResponseCode());
+  const out = JSON.parse(res.getContentText());
+  return out && out.ok === true;
+}
+
+function setAiConfig(body) {
+  const provider = String(body.provider || '').trim().toLowerCase();
+  const geminiModel = String(body.geminiModel || '').trim();
+  if (AI_PROVIDERS.indexOf(provider) < 0) return { success: false, code: 'bad_provider', error: 'Unknown AI engine: ' + provider };
+  if (geminiModel && !/^[\w.\-]{1,60}$/.test(geminiModel)) return { success: false, code: 'bad_model', error: 'Invalid Gemini model name.' };
+
+  let valid;
+  try { valid = ceoTokenIsValid(body.token); }
+  catch (err) { return { success: false, code: 'auth_unreachable', error: 'Could not reach CEO verification: ' + err.message }; }
+  if (!valid) return { success: false, code: 'unauthorized', error: 'CEO unlock has expired — unlock again with the PIN.' };
+
+  const props = PropertiesService.getScriptProperties();
+  const now = new Date().toISOString();
+  props.setProperties({ AI_PROVIDER: provider, AI_GEMINI_MODEL: geminiModel, AI_UPDATED_AT: now });
+  return { success: true, provider: provider, geminiModel: geminiModel, updatedAt: now };
+}
+
+function listRecentFiles(days) {
+  const root = getFolderOrNull(DriveApp.getRootFolder(), ROOT_FOLDER_NAME);
+  if (!root) return [];
+  const cutoff = Date.now() - Math.max(1, days || 3) * 86400000;
+  const out = [];
+  const folders = root.getFolders();
+  while (folders.hasNext()) {
+    const fo = folders.next();
+    if (fo.isTrashed()) continue;
+    // Cheap pre-filter on the folder itself — a day folder last touched before the
+    // cutoff cannot hold a file created after it.
+    if (fo.getLastUpdated().getTime() < cutoff) continue;
+    const files = fo.getFiles();
+    while (files.hasNext()) {
+      const f = files.next();
+      if (f.isTrashed()) continue;
+      const created = f.getDateCreated();
+      if (created.getTime() < cutoff) continue;
+      out.push({ id: f.getId(), name: f.getName(), folder: fo.getName(),
+                 created: created.toISOString(), size: f.getSize() });
+    }
+  }
+  out.sort((a, b) => (a.created < b.created ? 1 : -1));
+  return out;
 }
 
 /**

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v4.96</title>
+    <title>IBI File Re-Namer v4.98</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1066,7 +1066,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.97">v4.97</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v4.98">v4.98</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1266,7 +1266,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.96</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v4.98</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1290,6 +1290,7 @@
                     <option value="deepseek">DeepSeek</option>
                     <option value="local">IBI Local (this laptop — free, private)</option>
                 </select>
+                <p class="key-hint" id="aiSharedHint">The engine you pick here is used on <strong>every device</strong> running the Re-Namer — staff laptops switch by themselves. Keys and the access code below stay on <strong>this device only</strong>; each device needs its own once.</p>
             </div>
 
             <!-- Gemini fields -->
@@ -1545,8 +1546,84 @@ const DEFAULT_LOCAL_URL  = 'https://ai-local.indiabusinessinternational.online';
 // quotes — it MUST end in /exec. Leave it '' to keep Drive upload per-device (the old way).
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxTI0mUjbZTxcmBHIAj6n_JZzsa0jznlXNI8gXioPlGv3OjrHs9pgaIhCauQ_18fU1JHA/exec';
 
+// ── ONE AI ENGINE FOR EVERY DEVICE ──
+// The engine CHOICE (and Gemini model) is set by the CEO and kept on the Drive Apps
+// Script, so switching to Local AI on one PC reaches every staff laptop by itself.
+// Each browser keeps the last value it read here, so it still works offline.
+// Keys and the local access code are NOT shared — the endpoint is public.
+const AI_SHARED_STORE = 'ibi_ai_shared';
+const AI_PROVIDER_NAMES = { gemini: 'Google Gemini', openai: 'OpenAI', claude: 'Anthropic Claude', deepseek: 'DeepSeek', local: 'IBI Local AI' };
+
+function getSharedAi() {
+    try {
+        const s = JSON.parse(localStorage.getItem(AI_SHARED_STORE) || 'null');
+        return s && AI_PROVIDER_NAMES[s.provider] ? s : null;
+    } catch { return null; }
+}
+
+let aiSelectTouched = false;   // the CEO changed the engine picker in the open Settings
+let sharedAiCheckedAt = 0;
+let sharedAiInFlight = null;
+// Reads the CEO's choice. Throttled, and never throws: an unreachable Drive
+// endpoint just leaves the last known choice in place.
+function refreshSharedAiConfig(force) {
+    if (sharedAiInFlight) return sharedAiInFlight;
+    if (!force && Date.now() - sharedAiCheckedAt < 30000) return Promise.resolve(getSharedAi());
+    const url = getGasUrl();
+    if (!url) return Promise.resolve(getSharedAi());
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), 8000) : null;
+    const before = getAiProvider() + '|' + getGeminiModel();
+    sharedAiInFlight = fetch(url + (url.includes('?') ? '&' : '?') + 'action=aiConfig', { signal: ctrl ? ctrl.signal : undefined })
+        .then(r => r.json())
+        .then(res => {
+            sharedAiCheckedAt = Date.now();
+            if (!res || res.success !== true) return getSharedAi();
+            try {
+                if (AI_PROVIDER_NAMES[res.provider]) {
+                    localStorage.setItem(AI_SHARED_STORE, JSON.stringify({ provider: res.provider, geminiModel: res.geminiModel || '', updatedAt: res.updatedAt || '' }));
+                } else {
+                    localStorage.removeItem(AI_SHARED_STORE);   // CEO has never set one: this device's own choice applies
+                }
+            } catch (e) {}
+            if (getAiProvider() + '|' + getGeminiModel() !== before) onAiEngineChanged();
+            return getSharedAi();
+        })
+        .catch(() => getSharedAi())
+        .finally(() => { if (timer) clearTimeout(timer); sharedAiInFlight = null; });
+    return sharedAiInFlight;
+}
+
+// Keep what is on screen in step with an engine switch made on another device.
+function onAiEngineChanged() {
+    const overlay = $('settingsOverlay');
+    if (overlay && overlay.classList.contains('open')) {
+        // Settings is open: update only the engine picker, and only if the CEO has not
+        // already picked something — never wipe keys that are being typed.
+        if (!aiSelectTouched) { $('aiProviderSelect').value = getAiProvider(); $('geminiModelSelect').value = getGeminiModel(); showProviderFields(getAiProvider()); }
+    } else {
+        refreshSettingsUI();
+    }
+    if (typeof geminiScanRow !== 'undefined' && geminiScanRow && state && state.pdfDoc) {
+        geminiScanRow.style.display = hasAiKey() ? 'block' : 'none';
+    }
+}
+
+function aiProviderName(p) { return AI_PROVIDER_NAMES[p || getAiProvider()] || 'AI'; }
+
+// Why an AI scan cannot run on THIS device. Staff cannot open Settings, so say who can.
+function missingAiKeyMessage() {
+    const p = getAiProvider();
+    const what = p === 'local' ? 'access code' : 'API key';
+    return 'This device has no ' + aiProviderName(p) + ' ' + what + ' yet — the CEO needs to enter it once in ⚙ Settings on this device.';
+}
+
 function getGeminiKey()   { try { return localStorage.getItem(GEMINI_KEY_STORE)  || ''; } catch { return ''; } }
-function getGeminiModel() { try { return localStorage.getItem(GEMINI_MODEL_STORE) || 'gemini-1.5-flash'; } catch { return 'gemini-1.5-flash'; } }
+function getGeminiModel() {
+    const shared = getSharedAi();
+    if (shared && shared.geminiModel) return shared.geminiModel;
+    try { return localStorage.getItem(GEMINI_MODEL_STORE) || 'gemini-1.5-flash'; } catch { return 'gemini-1.5-flash'; }
+}
 function getGasUrl()      {
     try {
         // A per-device override (saved via ⚙ Settings) wins ONLY if it's a valid deployed
@@ -1556,7 +1633,11 @@ function getGasUrl()      {
         return /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec\b/.test(saved) ? saved : DEFAULT_GAS_URL;
     } catch { return DEFAULT_GAS_URL; }
 }
-function getAiProvider()  { try { return localStorage.getItem(AI_PROVIDER_STORE) || 'gemini'; } catch { return 'gemini'; } }
+function getAiProvider()  {
+    const shared = getSharedAi();
+    if (shared) return shared.provider;                 // the CEO's choice wins on every device
+    try { return localStorage.getItem(AI_PROVIDER_STORE) || 'gemini'; } catch { return 'gemini'; }
+}
 function getOpenaiKey()   { try { return localStorage.getItem(OPENAI_KEY_STORE)  || ''; } catch { return ''; } }
 function getClaudeKey()   { try { return localStorage.getItem(CLAUDE_KEY_STORE)  || ''; } catch { return ''; } }
 function getDeepseekKey() { try { return localStorage.getItem(DEEPSEEK_KEY_STORE) || ''; } catch { return ''; } }
@@ -1653,6 +1734,10 @@ function setCeoUnlocked(token) {
 function openSettings() {
     refreshSettingsUI();
     $('keyStatus').textContent = '';
+    $('keyStatus').style.color = '';
+    aiSelectTouched = false;
+    // Show the engine actually in force, even if it was switched elsewhere a moment ago.
+    refreshSharedAiConfig(true);
     $('settingsOverlay').classList.add('open');
     ['geminiKeyInput','openaiKeyInput','claudeKeyInput','deepseekKeyInput','localCodeInput'].forEach(id => { $(id).type = 'password'; });
 }
@@ -1714,7 +1799,8 @@ $('modalClose').addEventListener('click', () => $('settingsOverlay').classList.r
 $('settingsOverlay').addEventListener('click', e => { if (e.target === $('settingsOverlay')) $('settingsOverlay').classList.remove('open'); });
 
 // Provider dropdown → show matching key fields
-$('aiProviderSelect').addEventListener('change', () => showProviderFields($('aiProviderSelect').value));
+$('aiProviderSelect').addEventListener('change', () => { aiSelectTouched = true; showProviderFields($('aiProviderSelect').value); });
+$('geminiModelSelect').addEventListener('change', () => { aiSelectTouched = true; });
 
 // API-key protection: keys can be PASTED IN but never copied/cut/dragged OUT,
 // and they always stay masked (no reveal button). This stops the key being
@@ -1731,7 +1817,7 @@ $('aiProviderSelect').addEventListener('change', () => showProviderFields($('aiP
 });
 
 // Save all settings
-$('saveKeyBtn').addEventListener('click', () => {
+$('saveKeyBtn').addEventListener('click', async () => {
     const provider = $('aiProviderSelect').value;
     const gKey  = $('geminiKeyInput').value.trim();
     const gModel = $('geminiModelSelect').value;
@@ -1755,14 +1841,70 @@ $('saveKeyBtn').addEventListener('click', () => {
         if (dsKey) localStorage.setItem(DEEPSEEK_KEY_STORE, dsKey); else localStorage.removeItem(DEEPSEEK_KEY_STORE);
         if (gas)  localStorage.setItem(GAS_URL_STORE, gas);     else localStorage.removeItem(GAS_URL_STORE);
         driveBtn.disabled = !state.file;   // clickable whenever a PDF is loaded; click guides to Settings if no URL
+    } catch { $('keyStatus').textContent = 'Storage error'; return; }
+
+    // Send the engine choice to every device. Only when it actually changed, so saving
+    // a key does not need the network.
+    const shared = getSharedAi();
+    const changed = !shared || shared.provider !== provider || (shared.geminiModel || '') !== gModel;
+    if (!changed) {
         $('keyStatus').textContent = '✓ Saved';
         setTimeout(() => { $('keyStatus').textContent = ''; $('settingsOverlay').classList.remove('open'); }, 900);
         refreshSettingsUI();
-    } catch { $('keyStatus').textContent = 'Storage error'; }
+        return;
+    }
+
+    const saveBtn = $('saveKeyBtn');
+    saveBtn.disabled = true;
+    $('keyStatus').style.color = '';
+    $('keyStatus').textContent = '⟳ Switching every device to ' + aiProviderName(provider) + '…';
+    let res;
+    try {
+        const r = await fetch(getGasUrl(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+                type: 'setAiConfig',
+                token: (() => { try { return sessionStorage.getItem(CEO_STORE) || ''; } catch (e) { return ''; } })(),
+                provider: provider,
+                geminiModel: gModel
+            })
+        });
+        res = await r.json();
+    } catch (e) {
+        res = { success: false, error: 'Could not reach Google Drive endpoint.' };
+    }
+    saveBtn.disabled = false;
+
+    if (res && res.success) {
+        try { localStorage.setItem(AI_SHARED_STORE, JSON.stringify({ provider: res.provider, geminiModel: res.geminiModel || '', updatedAt: res.updatedAt || '' })); } catch (e) {}
+        sharedAiCheckedAt = Date.now();
+        $('keyStatus').textContent = '✓ Saved — every device now uses ' + aiProviderName(res.provider);
+        refreshSettingsUI();
+        setTimeout(() => { $('keyStatus').textContent = ''; $('settingsOverlay').classList.remove('open'); }, 2200);
+        return;
+    }
+    // Not shared. Do not pretend it was: the modal stays open with the reason.
+    if (res && res.code === 'unauthorized') setCeoUnlocked('');
+    // An older Drive script (before v12) does not know this request and answers with
+    // an upload error — say what to do rather than showing that.
+    const reason = (res && res.code) ? res.error
+                 : 'The Google Drive script needs updating to v12 before the engine can be shared.';
+    // With a shared choice already in force, this device keeps following it, so the
+    // switch did not happen anywhere. Without one, the choice applies here only.
+    $('keyStatus').style.color = '#f59e0b';
+    $('keyStatus').textContent = (shared ? '⚠ Engine NOT changed — ' : '⚠ Saved on this device only — ') + reason;
 });
 
 // Init settings button state on load
 refreshSettingsUI();
+
+// Pick up the CEO's engine choice: on load, whenever this tab comes back into view,
+// and (throttled) before every AI scan. No timer — nothing polls while nobody is looking.
+refreshSharedAiConfig(true);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshSharedAiConfig(true);
+});
 
 // Test GAS connection button
 $('testGasBtn').addEventListener('click', async () => {
@@ -1785,14 +1927,14 @@ function setGeminiScanStatus(html, type) {
 }
 
 geminiScanBtn.addEventListener('click', async () => {
-    if (!hasAiKey()) { setGeminiScanStatus('No AI key — open ⚙ Settings and add an API key for your provider.', 'error'); return; }
+    await refreshSharedAiConfig();
+    if (!hasAiKey()) { setGeminiScanStatus(missingAiKeyMessage(), 'error'); return; }
     if (!state.pdfDoc) { setGeminiScanStatus('No PDF loaded.', 'error'); return; }
 
     geminiScanBtn.disabled = true;
     const origLabel = geminiScanBtn.innerHTML;
     geminiScanBtn.innerHTML = '<span class="gemini-spin">⟳</span> Scanning…';
-    const prov = getAiProvider();
-    const provName = prov === 'openai' ? 'OpenAI' : prov === 'claude' ? 'Claude' : prov === 'deepseek' ? 'DeepSeek' : 'Gemini';
+    const provName = aiProviderName();
     setGeminiScanStatus('<span class="gemini-spin">⟳</span>&nbsp;Reading document with ' + provName + '…', '');
 
     try {
@@ -2133,6 +2275,8 @@ async function localVisionCall(prompt, base64Image) {
 
 // Unified vision dispatcher — routes to the provider chosen in Settings.
 async function aiVisionScan(prompt, base64Image) {
+    await refreshSharedAiConfig();                     // use the engine in force NOW
+    if (!hasAiKey()) throw new Error(missingAiKeyMessage());
     const provider = getAiProvider();
     if (provider === 'openai') return openaiVisionCall(getOpenaiKey(), prompt, base64Image);
     if (provider === 'claude') return claudeVisionCall(getClaudeKey(), prompt, base64Image);
@@ -5085,6 +5229,7 @@ batchClearBtn.addEventListener('click', () => {
 async function handleFiles(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
+    refreshSharedAiConfig();   // not awaited: the scan itself waits if it needs to
 
     if (files.length > 1) return startBatch(files);
 
