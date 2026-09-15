@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v5.2</title>
+    <title>IBI File Re-Namer v5.3</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1090,7 +1090,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.2">v5.2</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.3">v5.3</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1290,7 +1290,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.2</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.3</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1369,7 +1369,7 @@
                     <div class="api-key-row">
                         <input type="password" id="deepseekKeyInput" placeholder="sk-..." autocomplete="off" spellcheck="false">
                     </div>
-                    <p class="key-hint">Uses <strong>DeepSeek V4</strong> (multimodal vision). Key: <a href="https://platform.deepseek.com/api_keys" target="_blank">platform.deepseek.com</a>. Note: if your browser blocks the request (CORS), use Gemini/OpenAI/Claude instead.</p>
+                    <p class="key-hint">Uses <strong>DeepSeek V4</strong> (multimodal vision). Key: <a href="https://platform.deepseek.com/api_keys" target="_blank">platform.deepseek.com</a>.</p>
                 </div>
             </div>
 
@@ -1394,7 +1394,7 @@
                     <div class="api-key-row">
                         <input type="password" id="localCodeInput" placeholder="the gateway access code" autocomplete="off" spellcheck="false">
                     </div>
-                    <p class="key-hint">Runs <strong>qwen3.5:4b</strong> on the laptop — no key, no cost, and the document never leaves the building. <strong>The laptop must be awake.</strong> Slower than the cloud engines and weaker on messy handwriting; if a scan comes back poor, switch back to Gemini.</p>
+                    <p class="key-hint">Runs <strong>qwen3.5:4b</strong> on the office laptop — no per-scan cost, and no outside AI company sees the document (the page image passes through the company's own Google Drive script to reach the laptop). <strong>The laptop must be awake.</strong> Slower than the cloud engines and weaker on messy handwriting; if a scan comes back poor, switch back to Gemini.</p>
                 </div>
             </div>
 
@@ -1550,19 +1550,19 @@ debugToggle.addEventListener('click', () => {
     debugCaret.textContent = isOpen ? '▾' : '▸';
 });
 
-// =================== GEMINI SETTINGS ===================
-// Keys are held by the Drive Apps Script, never by this page (see below). The *_KEY_STORE
-// names remain only to find and delete copies older versions saved in browsers.
+// =================== AI & DRIVE SETTINGS ===================
+// API keys and the Local AI access code are held by the Drive Apps Script, never by
+// this page (see below).
 
-const GEMINI_KEY_STORE  = 'ibi_gemini_key';
-const GEMINI_MODEL_STORE = 'ibi_gemini_model';
 const GAS_URL_STORE      = 'ibi_gas_url';
-const AI_PROVIDER_STORE  = 'ibi_ai_provider';
-const OPENAI_KEY_STORE   = 'ibi_openai_key';
-const CLAUDE_KEY_STORE   = 'ibi_claude_key';
-const DEEPSEEK_KEY_STORE = 'ibi_deepseek_key';
-const LOCAL_URL_STORE    = 'ibi_local_url';
-const LOCAL_CODE_STORE   = 'ibi_local_code';
+
+// What versions before v4.99 kept in every browser: API keys, the Local AI code and the
+// engine choice. All of it now lives on the server, so any copy left behind is deleted
+// on load — a secret must not sit in a browser just because an old version put it there.
+['ibi_gemini_key', 'ibi_openai_key', 'ibi_claude_key', 'ibi_deepseek_key', 'ibi_local_code',
+ 'ibi_local_url', 'ibi_ai_provider', 'ibi_gemini_model'].forEach(k => {
+    try { localStorage.removeItem(k); } catch (e) {}
+});
 
 // The laptop's gateway. Safe to bake in — it is only an address, and the
 // gateway refuses everything that arrives without the access code, which is
@@ -1581,39 +1581,21 @@ const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxTI0mUjbZTxcmB
 // Local AI access code. This page never stores or even receives a key: the server
 // reports only WHETHER each one is set, and every AI scan is sent to the server, which
 // adds the key itself. Switching engine on one PC therefore reaches every staff laptop.
-// Each browser caches the last reply (engine + yes/no per key) so it can show state
-// before the network answers.
+// Each browser caches the last reply (engine + yes/no per key — no secrets) so it can
+// show state before the network answers.
 const AI_SHARED_STORE = 'ibi_ai_shared';
 const AI_PROVIDER_NAMES = { gemini: 'Google Gemini', openai: 'OpenAI', claude: 'Anthropic Claude', deepseek: 'DeepSeek', local: 'IBI Local AI' };
-// Keys older versions of this page saved in the browser. Read ONLY to move them to the
-// server once (CEO's Save) and while a pre-v12 Drive script is still deployed; deleted
-// from the browser as soon as the server holds that key.
-const LEGACY_KEY_STORES = { gemini: GEMINI_KEY_STORE, openai: OPENAI_KEY_STORE, claude: CLAUDE_KEY_STORE, deepseek: DEEPSEEK_KEY_STORE, local: LOCAL_CODE_STORE };
 
 function getSharedAi() {
     try {
         const s = JSON.parse(localStorage.getItem(AI_SHARED_STORE) || 'null');
-        return s && (s.proxy || AI_PROVIDER_NAMES[s.provider]) ? s : null;
+        return s && s.proxy ? s : null;
     } catch { return null; }
-}
-// True once the deployed Drive script runs AI scans itself (v12+).
-function serverAiReady() { const s = getSharedAi(); return !!(s && s.proxy); }
-
-function legacyKey(p) { try { return (localStorage.getItem(LEGACY_KEY_STORES[p]) || '').trim(); } catch { return ''; } }
-
-// Delete every browser-stored key the server now holds.
-function purgeLegacyKeys() {
-    const s = getSharedAi();
-    if (!s || !s.proxy) return;
-    try {
-        Object.keys(LEGACY_KEY_STORES).forEach(p => { if (s.keys && s.keys[p]) localStorage.removeItem(LEGACY_KEY_STORES[p]); });
-        localStorage.removeItem(LOCAL_URL_STORE);
-    } catch (e) {}
 }
 
 function storeSharedAi(res) {
     try {
-        if (res.proxy || AI_PROVIDER_NAMES[res.provider]) {
+        if (res.proxy) {
             localStorage.setItem(AI_SHARED_STORE, JSON.stringify({
                 provider: AI_PROVIDER_NAMES[res.provider] ? res.provider : '',
                 geminiModel: res.geminiModel || '', localUrl: res.localUrl || '',
@@ -1623,7 +1605,6 @@ function storeSharedAi(res) {
             localStorage.removeItem(AI_SHARED_STORE);
         }
     } catch (e) {}
-    purgeLegacyKeys();
 }
 
 let aiSelectTouched = false;   // the CEO changed the engine picker in the open Settings
@@ -1674,14 +1655,13 @@ function aiProviderName(p) { return AI_PROVIDER_NAMES[p || getAiProvider()] || '
 function missingAiKeyMessage() {
     const p = getAiProvider();
     const what = p === 'local' ? 'access code' : 'API key';
-    if (serverAiReady()) return 'No ' + aiProviderName(p) + ' ' + what + ' is saved on the server yet — the CEO needs to add it once in ⚙ Settings.';
-    return 'AI scanning is not set up — the CEO needs to update the Google Drive script to v12 and add the ' + aiProviderName(p) + ' ' + what + ' in ⚙ Settings.';
+    if (getSharedAi()) return 'No ' + aiProviderName(p) + ' ' + what + ' is saved on the server yet — the CEO needs to add it once in ⚙ Settings.';
+    return 'Could not load the AI settings from the server — check the internet connection and try again.';
 }
 
 function getGeminiModel() {
     const shared = getSharedAi();
-    if (shared && shared.geminiModel) return shared.geminiModel;
-    try { return localStorage.getItem(GEMINI_MODEL_STORE) || 'gemini-1.5-flash'; } catch { return 'gemini-1.5-flash'; }
+    return (shared && shared.geminiModel) || 'gemini-1.5-flash';
 }
 function getGasUrl()      {
     try {
@@ -1694,25 +1674,17 @@ function getGasUrl()      {
 }
 function getAiProvider()  {
     const shared = getSharedAi();
-    if (shared && AI_PROVIDER_NAMES[shared.provider]) return shared.provider;   // the CEO's choice wins on every device
-    try { return localStorage.getItem(AI_PROVIDER_STORE) || 'gemini'; } catch { return 'gemini'; }
+    return (shared && AI_PROVIDER_NAMES[shared.provider]) ? shared.provider : 'gemini';   // the CEO's choice, on every device
 }
 function getLocalUrl()    {
     const shared = getSharedAi();
-    if (shared && shared.proxy) return shared.localUrl || DEFAULT_LOCAL_URL;
-    try {
-        const saved = (localStorage.getItem(LOCAL_URL_STORE) || '').trim().replace(/\/+$/, '');
-        return saved || DEFAULT_LOCAL_URL;
-    } catch { return DEFAULT_LOCAL_URL; }
+    return (shared && shared.localUrl) || DEFAULT_LOCAL_URL;
 }
 
-// True if the chosen engine can run: its key is on the server (or, until the Drive
-// script is updated, an older key is still in this browser).
+// True if the chosen engine can run: the server holds its key.
 function hasAiKey() {
-    const p = getAiProvider();
     const shared = getSharedAi();
-    if (shared && shared.proxy) return !!(shared.keys && shared.keys[p]);
-    return !!legacyKey(p);
+    return !!(shared && shared.keys && shared.keys[getAiProvider()]);
 }
 
 // "✓ Saved on the server" beside each key field. The field itself stays EMPTY — a
@@ -1730,11 +1702,8 @@ function showKeyStates() {
             input.closest('.api-key-row').insertAdjacentElement('afterend', tag);
         }
         const onServer = !!(shared && shared.proxy && shared.keys && shared.keys[p]);
-        const inBrowser = !onServer && !!legacyKey(p);
         tag.style.color = onServer ? '#10b981' : '#f59e0b';
-        tag.textContent = onServer ? '✓ Saved on the server — type a new one only to replace it.'
-                        : inBrowser ? '⚠ An older copy is saved in this browser — Save moves it to the server and removes it here.'
-                        : 'Not set.';
+        tag.textContent = onServer ? '✓ Saved on the server — type a new one only to replace it.' : 'Not set.';
     });
 }
 
@@ -1926,16 +1895,11 @@ $('saveKeyBtn').addEventListener('click', async () => {
         driveBtn.disabled = !state.file;   // clickable whenever a PDF is loaded; click guides to Settings if no URL
     } catch { status.textContent = 'Storage error'; return; }
 
-    // Keys to send: whatever was typed, plus a key an older version left in this browser
-    // that the server does not have yet (moved once, then deleted here).
+    // Keys to send: only what was typed. A blank box leaves the server's key as it is.
     const shared = getSharedAi();
     const keys = {};
-    Object.keys(typed).forEach(p => {
-        const onServer = !!(shared && shared.proxy && shared.keys && shared.keys[p]);
-        const k = typed[p] || (!onServer ? legacyKey(p) : '');
-        if (k) keys[p] = k;
-    });
-    const sameEngine = shared && shared.proxy && shared.provider === provider
+    Object.keys(typed).forEach(p => { if (typed[p]) keys[p] = typed[p]; });
+    const sameEngine = shared && shared.provider === provider
         && (shared.geminiModel || '') === gModel && (shared.localUrl || DEFAULT_LOCAL_URL) === (lUrl || DEFAULT_LOCAL_URL);
     if (sameEngine && !Object.keys(keys).length) {
         status.textContent = '✓ Saved';
@@ -1968,7 +1932,7 @@ $('saveKeyBtn').addEventListener('click', async () => {
     saveBtn.disabled = false;
 
     if (res && res.success) {
-        storeSharedAi(res);                 // also deletes any old browser copy of a key the server now holds
+        storeSharedAi(res);
         sharedAiCheckedAt = Date.now();
         const sent = Object.keys(keys).length;
         status.textContent = '✓ Saved on the server — every device now uses ' + aiProviderName(res.provider)
@@ -1982,7 +1946,7 @@ $('saveKeyBtn').addEventListener('click', async () => {
     // A Drive script older than v12 does not know this request and answers with an
     // upload error — say what to do rather than showing that.
     const reason = (res && res.code) ? res.error
-                 : 'the Google Drive script must be updated to v12 first (keys are no longer kept in the browser).';
+                 : 'the Google Drive script did not accept the change. Try again.';
     status.style.color = '#f59e0b';
     status.textContent = '⚠ Not saved — ' + reason;
 });
@@ -2106,63 +2070,6 @@ async function renderPageToBase64(pdfDoc, pageNum, scale) {
     return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
 }
 
-// Reliable free-tier vision models, tried in order. gemini-2.0-flash often has
-// "limit: 0" on free-tier keys (esp. some regions), so 1.5-flash is the safe default.
-const GEMINI_MODEL_CHAIN = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
-
-// Call Gemini Vision with automatic fallback across models.
-// If the chosen model returns a quota/availability error (429 / 404 / "limit: 0"),
-// it transparently retries the next model in the chain. Returns the raw text.
-async function geminiVisionCall(apiKey, preferredModel, prompt, base64Image) {
-    // Build ordered, de-duplicated model list: preferred first, then the chain.
-    const models = [preferredModel, ...GEMINI_MODEL_CHAIN].filter((m, i, a) => m && a.indexOf(m) === i);
-    let lastErr = null;
-    let quotaHit = false;
-
-    for (const model of models) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-        let response;
-        try {
-            response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [
-                        { inline_data: { mime_type: 'image/jpeg', data: base64Image } },
-                        { text: prompt }
-                    ]}],
-                    generationConfig: { temperature: 0, maxOutputTokens: 600 }
-                })
-            });
-        } catch (netErr) {
-            lastErr = new Error('Network error contacting Gemini.');
-            continue;
-        }
-
-        if (response.ok) {
-            const data = await response.json();
-            return (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
-        }
-
-        // Non-OK: read error and decide whether to try the next model
-        const err = await response.json().catch(() => ({}));
-        const msg = err.error?.message || ('HTTP ' + response.status);
-        if (response.status === 429 || response.status === 404 || /limit:\s*0|quota|not\s+found|not\s+supported/i.test(msg)) {
-            quotaHit = quotaHit || response.status === 429;
-            lastErr = new Error(`${model}: ${msg}`);
-            continue;   // try next model in the chain
-        }
-        // Other errors (e.g. 400 bad key) — stop and report
-        throw new Error(`Gemini ${response.status}: ${msg}`);
-    }
-
-    // All models failed
-    if (quotaHit) {
-        throw new Error('Free-tier quota exhausted on all models. Wait ~1 min and retry, enable billing, or pick another model in ⚙ Settings.');
-    }
-    throw new Error(lastErr ? lastErr.message : 'All Gemini models failed.');
-}
-
 // Parse Gemini text output into JSON (strips code fences).
 function parseGeminiJson(raw) {
     const clean = (raw || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
@@ -2174,212 +2081,12 @@ function parseGeminiJson(raw) {
     }
 }
 
-// ── OpenAI Vision (GPT-4o family) with model fallback ──
-const OPENAI_MODEL_CHAIN = ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4-turbo'];
-async function openaiVisionCall(apiKey, prompt, base64Image) {
-    if (!apiKey) throw new Error('OpenAI API key not set — add it in ⚙ Settings.');
-    let lastErr = null;
-    for (const model of OPENAI_MODEL_CHAIN) {
-        let response;
-        try {
-            response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-                body: JSON.stringify({
-                    model: model,
-                    temperature: 0,
-                    max_tokens: 600,
-                    messages: [{
-                        role: 'user',
-                        content: [
-                            { type: 'text', text: prompt },
-                            { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + base64Image } }
-                        ]
-                    }]
-                })
-            });
-        } catch { lastErr = new Error('Network error contacting OpenAI.'); continue; }
-
-        if (response.ok) {
-            const data = await response.json();
-            return (data.choices?.[0]?.message?.content || '').trim();
-        }
-        const err = await response.json().catch(() => ({}));
-        const msg = err.error?.message || ('HTTP ' + response.status);
-        if (response.status === 404 || response.status === 429 || /model|does not exist|not found|quota|rate/i.test(msg)) {
-            lastErr = new Error(`${model}: ${msg}`); continue;   // try next model
-        }
-        throw new Error('OpenAI ' + response.status + ': ' + msg);
-    }
-    throw new Error(lastErr ? ('OpenAI — ' + lastErr.message) : 'All OpenAI models failed.');
-}
-
-// ── Anthropic Claude Vision with model fallback ──
-// Current Claude 4.x models (dateless pinned IDs) first; older 3.x are retired and
-// will 404, so they sit last only for unusually old accounts.
-const CLAUDE_MODEL_CHAIN = [
-    'claude-haiku-4-5',          // fast + cheap + vision — ideal for date/text extraction
-    'claude-sonnet-4-6',         // balanced
-    'claude-opus-4-8',           // flagship fallback
-    'claude-3-5-haiku-latest',   // legacy fallback (older accounts only)
-    'claude-3-5-sonnet-latest'
-];
-async function claudeVisionCall(apiKey, prompt, base64Image) {
-    if (!apiKey) throw new Error('Claude API key not set — add it in ⚙ Settings.');
-    let lastErr = null;
-    for (const model of CLAUDE_MODEL_CHAIN) {
-        let response;
-        try {
-            response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': apiKey,
-                    'anthropic-version': '2023-06-01',
-                    'anthropic-dangerous-direct-browser-access': 'true'
-                },
-                body: JSON.stringify({
-                    model: model,
-                    max_tokens: 600,
-                    messages: [{
-                        role: 'user',
-                        content: [
-                            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64Image } },
-                            { type: 'text', text: prompt }
-                        ]
-                    }]
-                })
-            });
-        } catch { lastErr = new Error('Network error contacting Claude.'); continue; }
-
-        if (response.ok) {
-            const data = await response.json();
-            return (data.content?.[0]?.text || '').trim();
-        }
-        const err = await response.json().catch(() => ({}));
-        const msg = err.error?.message || ('HTTP ' + response.status);
-        if (response.status === 404 || response.status === 429 || /model|not_found|not found|overloaded|rate/i.test(msg)) {
-            lastErr = new Error(`${model}: ${msg}`); continue;   // try next model
-        }
-        throw new Error('Claude ' + response.status + ': ' + msg);
-    }
-    throw new Error(lastErr ? ('Claude — ' + lastErr.message) : 'All Claude models failed.');
-}
-
-// ── DeepSeek Vision (V4, OpenAI-compatible format) with model fallback ──
-// 'deepseek-flash' is DeepSeek V4.1 Flash, the canonical ID. The old names
-// ('deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-flash') all still work,
-// but they are ALIASES OF THIS SAME MODEL — verified live 12 Sep 2026 — so
-// retrying them after a failure just calls Flash again and cannot help. Only a
-// genuinely different model belongs in this chain, hence the two entries.
-// ⚠ v4-pro costs ~4× Flash on output: it is the last resort, never the default.
-const DEEPSEEK_MODEL_CHAIN = ['deepseek-flash', 'deepseek-v4-pro'];
-async function deepseekVisionCall(apiKey, prompt, base64Image) {
-    if (!apiKey) throw new Error('DeepSeek API key not set — add it in ⚙ Settings.');
-    let lastErr = null;
-    for (const model of DEEPSEEK_MODEL_CHAIN) {
-        let response;
-        try {
-            response = await fetch('https://api.deepseek.com/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-                body: JSON.stringify({
-                    model: model,
-                    temperature: 0,
-                    max_tokens: 600,
-                    // Non-thinking mode. DeepSeek v4 defaults to THINKING at
-                    // high effort, and reasoning tokens come out of this same
-                    // 600-token budget — so with it on the call can spend the
-                    // whole allowance reasoning and return nothing. Reading a
-                    // few fields off a document to build a filename needs no
-                    // reasoning pass.
-                    thinking: { type: 'disabled' },
-                    messages: [{
-                        role: 'user',
-                        content: [
-                            { type: 'text', text: prompt },
-                            { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + base64Image } }
-                        ]
-                    }]
-                })
-            });
-        } catch { lastErr = new Error('Network/CORS error contacting DeepSeek — try Gemini, OpenAI or Claude.'); continue; }
-
-        if (response.ok) {
-            const data = await response.json();
-            return (data.choices?.[0]?.message?.content || '').trim();
-        }
-        const err = await response.json().catch(() => ({}));
-        const msg = err.error?.message || ('HTTP ' + response.status);
-        if (response.status === 404 || response.status === 429 || /model|does not exist|not found|quota|rate/i.test(msg)) {
-            lastErr = new Error(`${model}: ${msg}`); continue;   // try next model
-        }
-        throw new Error('DeepSeek ' + response.status + ': ' + msg);
-    }
-    throw new Error(lastErr ? ('DeepSeek — ' + lastErr.message) : 'All DeepSeek models failed.');
-}
-
-// The laptop's own model, through the gateway. Speaks the OpenAI shape, so the
-// image travels as a data URL exactly as it does for OpenAI above.
-async function localVisionCall(prompt, base64Image) {
-    const code = legacyKey('local');
-    if (!code) throw new Error('IBI Local — no access code saved. Open ⚙ Settings and paste the gateway access code.');
-
-    let response;
-    try {
-        response = await fetch(getLocalUrl() + '/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-ibi-access': code },
-            body: JSON.stringify({
-                model: 'qwen3.5:4b',
-                max_tokens: 2048,
-                temperature: 0,
-                // The model deliberates unless told not to, and on this endpoint
-                // that burns the whole budget in a reasoning field while the
-                // answer comes back EMPTY. The gateway also applies this, but
-                // send it anyway so a direct localhost address still behaves.
-                reasoning_effort: 'none',
-                messages: [{ role: 'user', content: [
-                    { type: 'text', text: prompt },
-                    { type: 'image_url', image_url: { url: 'data:image/png;base64,' + base64Image } }
-                ] }]
-            })
-        });
-    } catch (e) {
-        // A sleeping laptop fails at the network layer, which otherwise surfaces
-        // as a bare "Failed to fetch" and reads like a bug in this app.
-        throw new Error('IBI Local — could not reach the laptop. It must be switched on and awake. (' + e.message + ')');
-    }
-
-    if (!response.ok) {
-        const msg = await response.text().catch(() => '');
-        if (response.status === 401) throw new Error('IBI Local — the access code was refused. Check it in ⚙ Settings.');
-        if (response.status === 403) throw new Error('IBI Local — this site is not allowed to use the laptop engine.');
-        throw new Error('IBI Local ' + response.status + ': ' + msg.slice(0, 200));
-    }
-
-    const data = await response.json();
-    const text = data?.choices?.[0]?.message?.content?.trim() || '';
-    if (!text) throw new Error('IBI Local returned an empty answer — try Gemini for this page.');
-    return text;
-}
-
-// Unified vision dispatcher. `kind` ('manifest' | 'document') names the scan: the
-// server runs only its own copy of that instruction, with the key it holds.
-async function aiVisionScan(prompt, base64Image, kind) {
+// AI scan. `kind` ('manifest' | 'document') names the scan; the Drive Apps Script runs
+// its own copy of that instruction (AI_PROMPTS) with the key it holds.
+async function aiVisionScan(kind, base64Image) {
     await refreshSharedAiConfig();                     // use the engine in force NOW
     if (!hasAiKey()) throw new Error(missingAiKeyMessage());
-    if (serverAiReady()) return serverVisionScan(kind, base64Image);
-
-    // ⏳ Until the Drive script is updated to v12 only: an older key still sitting in
-    // this browser keeps scans working. Nothing new is ever saved here, and these
-    // keys are deleted the moment the server holds them (purgeLegacyKeys).
-    const provider = getAiProvider();
-    if (provider === 'openai') return openaiVisionCall(legacyKey('openai'), prompt, base64Image);
-    if (provider === 'claude') return claudeVisionCall(legacyKey('claude'), prompt, base64Image);
-    if (provider === 'deepseek') return deepseekVisionCall(legacyKey('deepseek'), prompt, base64Image);
-    if (provider === 'local') return localVisionCall(prompt, base64Image);
-    return geminiVisionCall(legacyKey('gemini'), getGeminiModel(), prompt, base64Image);
+    return serverVisionScan(kind, base64Image);
 }
 
 // The scan itself runs on the Drive Apps Script. The page sends only the page image.
@@ -2400,48 +2107,17 @@ async function serverVisionScan(kind, base64Image) {
     throw new Error((res && res.error) || 'The AI scan failed.');
 }
 
-// Call Gemini Vision API with a manifest page image.
-// Returns structured JSON: { orderCount, date, platform, courier }
-async function scanManifestWithGemini(base64Image, apiKey, model) {
-    const prompt = `This is a shipping manifest PDF page from India Business International, an Indian eCommerce seller.
-
-Analyse the page carefully and return ONLY a valid JSON object with these fields:
-
-{
-  "orderCount": <integer — count data rows in the shipment table, NOT the header row. Look for S.No. column: 1, 2, 3... The highest S.No. number = orderCount>,
-  "date": "<string — date in DD-MM-YYYY format from the 'Date :' label, e.g. 29-05-2026. Return null if not found>",
-  "platform": "<string — one of: Meesho, Amazon, Flipkart, Shopsy, ShopClues. Infer from the manifest format. Meesho manifests have 'Pickup Executive Signature', 'Free Size', and 14-digit AWB numbers. Return null if unknown>",
-  "courier": "<string — courier name from 'Courier :' label, e.g. Delhivery. Return null if not found>"
+// Manifest page image → { orderCount, date, platform, courier }.
+// The instruction text lives in the Drive Apps Script (AI_PROMPTS.manifest).
+async function scanManifestWithGemini(base64Image) {
+    return parseGeminiJson(await aiVisionScan('manifest', base64Image));
 }
 
-Return ONLY the JSON object. No markdown, no explanation, no code blocks.`;
-
-    const raw = await aiVisionScan(prompt, base64Image, 'manifest');
-    return parseGeminiJson(raw);
-}
-
-// General-purpose scan: extract ALL fields from any eCommerce PDF (invoice/label/manifest).
-// Used by the manual "Scan with Gemini AI" button to fix incorrect auto-extraction.
-async function scanDocumentWithGemini(base64Image, apiKey, model) {
-    const prompt = `You are reading an eCommerce shipping document for the seller "India Business International" (brand iINTELLIGENCEi / IBI). It may be a Tax Invoice, a Shipping Label, or both combined (Amazon often prints the shipping label on the LEFT and the tax invoice on the RIGHT). Platform is one of: Amazon, Flipkart, Shopsy, Meesho, ShopClues.
-
-Extract the details and return ONLY a valid JSON object (no markdown, no code fences):
-
-{
-  "docType": "invoice" or "manifest" — "manifest" if it is a multi-row pickup/handover list (Courier, S.No table); otherwise "invoice",
-  "platform": "Amazon" | "Flipkart" | "Shopsy" | "Meesho" | "ShopClues" | null,
-  "product": "<core product name ONLY — keep material + type + head noun, REMOVE every marketing adjective (e.g. drop 'Anti-Slip', 'Natural', 'Premium', 'Coconut Fiber', 'Entrance', 'Welcome', 'Heavy Duty'). APPEND the size (Small/Medium/Large/XL) or dimensions (e.g. '60x40 cm', '11.5 L') whenever shown — prefer the size in the SKU. Example: 'Coir Door Mat Small'. No quantity words. null for manifests>",
-  "quantity": <integer total quantity of the product, null if unknown>,
-  "orderCount": <integer number of orders/shipment rows, only for manifests, else null>,
-  "invoiceDate": "<the INVOICE DATE in DD-MM-YYYY format. This is labelled 'Invoice Date' (on Amazon it is on the RIGHT side, just below 'Invoice Details'). NEVER use 'Order Date'. null if not found>",
-  "shipDate": "<the SHIP DATE / pickup date in DD-MM-YYYY format. On Amazon it is in the shipping label (LEFT side) labelled 'Ship Date:' just under the Order Id. On Flipkart/Shopsy it is the HBD date. null if there is no shipping label / not found>",
-  "colorVariant": "<color name if the product has a colour variant mentioned in the description, e.g. 'Navy Blue', 'Red', 'Dark Green'. null if not mentioned>"
-}
-
-Hints: Amazon invoice shows 'Amazon.in', ASIN like B0XXXXXXXX. Meesho shows 'Pickup Executive Signature', 'Free Size', 14-digit AWB. Flipkart/Shopsy show 'E-Kart Logistics', 'OD...' order ids and 'HBD'. ShopClues shows 'Powered by ShopClues.com', 'Ref:'. Count manifest rows by the S.No column. Return ONLY the JSON.`;
-
-    const raw = await aiVisionScan(prompt, base64Image, 'document');
-    return parseGeminiJson(raw);
+// Any eCommerce PDF page → { docType, platform, product, quantity, orderCount,
+// invoiceDate, shipDate, colorVariant }. Used by the manual "Scan with AI" button to fix
+// incorrect auto-extraction. The instruction text lives in AI_PROMPTS.document.
+async function scanDocumentWithGemini(base64Image) {
+    return parseGeminiJson(await aiVisionScan('document', base64Image));
 }
 
 // Helper: parse DD-MM-YYYY string to HTML date input value (YYYY-MM-DD)
@@ -4379,7 +4055,7 @@ async function processFile(file) {
                         if (pi) { invoiceDate.value = pi; msg.push('Inv ' + r.invoiceDate); }
                     }
                     if (msg.length) {
-                        pickupHint.textContent = '✓ Gemini: ' + msg.join(' · ');
+                        pickupHint.textContent = '✓ ' + aiProviderName() + ': ' + msg.join(' · ');
                         pickupHint.style.color = '#10b981';
                     } else {
                         pickupHint.textContent = '⚠ No Ship Date found — using default. Edit above if needed.';
