@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script>if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v5.4</title>
+    <title>IBI File Re-Namer v5.5</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1099,7 +1099,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.4">v5.4</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.5">v5.5</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1299,7 +1299,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.4</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.5</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1403,7 +1403,7 @@
                     <div class="api-key-row">
                         <input type="password" id="localCodeInput" placeholder="the gateway access code" autocomplete="off" spellcheck="false">
                     </div>
-                    <p class="key-hint">Runs <strong>qwen3.5:4b</strong> on the office laptop — no per-scan cost, and no outside AI company sees the document (the page image passes through the company's own Google Drive script to reach the laptop). <strong>The laptop must be awake.</strong> Slower than the cloud engines and weaker on messy handwriting; if a scan comes back poor, switch back to Gemini.</p>
+                    <p class="key-hint">Runs <strong>qwen3.5:9b</strong> on the office laptop — no per-scan cost, and no outside AI company sees the document (the page image passes through the company's own Google Drive script to reach the laptop). <strong>The laptop must be awake.</strong> Slower than the cloud engines and weaker on messy handwriting; if a scan comes back poor, switch back to Gemini.</p>
                 </div>
             </div>
 
@@ -1608,7 +1608,8 @@ function storeSharedAi(res) {
             localStorage.setItem(AI_SHARED_STORE, JSON.stringify({
                 provider: AI_PROVIDER_NAMES[res.provider] ? res.provider : '',
                 geminiModel: res.geminiModel || '', localUrl: res.localUrl || '',
-                keys: res.keys || {}, proxy: !!res.proxy, updatedAt: res.updatedAt || ''
+                keys: res.keys || {}, proxy: !!res.proxy, updatedAt: res.updatedAt || '',
+                version: res.version ? String(res.version) : ''
             }));
         } else {
             localStorage.removeItem(AI_SHARED_STORE);
@@ -1714,6 +1715,17 @@ function showKeyStates() {
         tag.style.color = onServer ? '#10b981' : '#f59e0b';
         tag.textContent = onServer ? '✓ Saved on the server — type a new one only to replace it.' : 'Not set.';
     });
+    // Website and Drive script carry ONE version number. A mismatch is a note, never a block.
+    const hint = $('aiSharedHint');
+    if (hint) {
+        let ver = $('aiVersionLine');
+        if (!ver) { ver = document.createElement('p'); ver.id = 'aiVersionLine'; ver.className = 'key-hint'; hint.insertAdjacentElement('afterend', ver); }
+        const app = ($('versionTag').textContent || '').trim().replace(/^v/, '');
+        const back = shared && shared.version ? shared.version : '';
+        ver.style.color = back === app ? '#10b981' : '#94a3b8';
+        ver.textContent = back === app ? 'App v' + app + ' · Drive script v' + back + ' ✓ in step'
+                        : 'App v' + app + ' · Drive script ' + (back ? 'v' + back : 'older than v' + app) + ' — paste the v' + app + ' Drive script when convenient.';
+    }
 }
 
 // Reflect saved settings in modal on open
@@ -2067,11 +2079,23 @@ geminiScanBtn.addEventListener('click', async () => {
 
 // =================== GEMINI SCAN FUNCTIONS ===================
 
+// The laptop engine pays for every pixel: image tokens grow with the area, and an A4
+// page at 2x (1190x1684, ~1,960 tokens) took it past Cloudflare's 100 s limit on every
+// scan from 16 Sep to 6 Oct 2026. At 1280 px on the long side (~1,100 tokens) the
+// 9B reads an invoice in ~35 s. The cloud engines keep the sharper 2x page.
+const LOCAL_AI_MAX_SIDE = 1280;
+
 // Render a PDF page to a JPEG base64 string using PDF.js canvas rendering.
 // scale=2 gives good quality without being too large for the API.
 async function renderPageToBase64(pdfDoc, pageNum, scale) {
+    await refreshSharedAiConfig();                     // size the image for the engine in force NOW
     const page    = await pdfDoc.getPage(pageNum || 1);
-    const viewport = page.getViewport({ scale: scale || 2.0 });
+    let s = scale || 2.0;
+    if (getAiProvider() === 'local') {
+        const base = page.getViewport({ scale: 1 });
+        s = Math.min(s, LOCAL_AI_MAX_SIDE / Math.max(base.width, base.height));
+    }
+    const viewport = page.getViewport({ scale: s });
     const canvas  = document.createElement('canvas');
     canvas.width  = viewport.width;
     canvas.height = viewport.height;

@@ -1,5 +1,5 @@
 /**
- * IBI File Re-Namer — Google Drive Upload Endpoint  (v12 — one AI engine for every device)
+ * IBI File Re-Namer — Google Drive Upload Endpoint  v5.5 (same number as the website)
  * Google Apps Script (GAS) Web App
  *
  * ══════════════════════════════════════════════════════════════════════
@@ -7,6 +7,16 @@
  *     Deploy ▸ Manage deployments ▸ (pencil ✏️) ▸ Version: New version ▸ Deploy
  *     Otherwise Google keeps running the OLD code.
  * ══════════════════════════════════════════════════════════════════════
+ *
+ *  WHAT'S NEW IN v5.5 (6 Oct 2026) — IBI Local reads pages on the 9B model:
+ *   • Every IBI Local scan from 16 Sep to 6 Oct failed. The 4B model has run on the
+ *     laptop's processor since 15 Sep; a full page took it ~2 minutes, past the
+ *     100-second limit of the laptop's internet tunnel. Local scans now use
+ *     qwen3.5:9b (on the graphics card, ~35 s a page). Script Property
+ *     LOCAL_AI_MODEL overrides it if ever needed.
+ *   • The website (v5.5) now sends Local AI a 1280 px page instead of 2x.
+ *   • The reply is capped at 600 tokens like the other engines (the answer is ~80).
+ *   • This file now carries the website's version number (was "v12").
  *
  *  WHAT'S NEW IN v12:
  *   • ONE AI ENGINE FOR EVERY DEVICE. The CEO's choice (Gemini / OpenAI / Claude /
@@ -125,6 +135,7 @@
  */
 
 // ─── CONFIG ────────────────────────────────────────────────────
+const APP_VERSION = '5.5';   // same number as the website's badge — moves with it every release
 const ROOT_FOLDER_NAME = 'IBI Daily Orders';
 const KEEP_DAYS = 30;   // rolling retention: folders older than this many days are auto-deleted
 // ───────────────────────────────────────────────────────────────
@@ -382,7 +393,7 @@ function doGet(e) {
   }
   return json({
     status: 'active', rootFolder: ROOT_FOLDER_NAME, keepDays: KEEP_DAYS,
-    version: 12, conflictPrompt: true, idempotent: true, orderNumbering: true, hashIdentity: true, crossFolderDuplicateCheck: true,
+    version: APP_VERSION, conflictPrompt: true, idempotent: true, orderNumbering: true, hashIdentity: true, crossFolderDuplicateCheck: true,
     list: true, aiConfig: true
   });
 }
@@ -420,6 +431,7 @@ function readAiConfig() {
     localUrl: props.getProperty('AI_LOCAL_URL') || '',
     keys: keys,          // true/false only — never the key
     proxy: true,         // AI scans run here (type:'aiScan')
+    version: APP_VERSION,
     updatedAt: props.getProperty('AI_UPDATED_AT') || ''
   };
 }
@@ -592,11 +604,15 @@ function aiClaude_(key, prompt, image) {
 // The laptop engine through its gateway. The access code goes in x-ibi-access,
 // added here — the gateway accepts server calls that carry no Origin header.
 // ⚠ Apps Script gives an outside call about a minute; a cold laptop can exceed it.
+// v5.5: pages go to the 9B (GPU). The 4B runs on the processor since 15 Sep 2026 and
+// needs ~2 min for a page — the tunnel cuts any call at 100 s (HTTP 524).
+const DEFAULT_LOCAL_VISION_MODEL = 'qwen3.5:9b';
 function aiLocal_(code, baseUrl, prompt, image) {
+  const model = PropertiesService.getScriptProperties().getProperty('LOCAL_AI_MODEL') || DEFAULT_LOCAL_VISION_MODEL;
   let r;
   try {
     r = aiFetch_(baseUrl + '/v1/chat/completions', { 'x-ibi-access': code }, {
-      model: 'qwen3.5:4b', max_tokens: 2048, temperature: 0,
+      model: model, max_tokens: 600, temperature: 0,
       reasoning_effort: 'none',   // without this the model thinks and the answer comes back EMPTY
       messages: [{ role: 'user', content: [
         { type: 'text', text: prompt },
@@ -610,6 +626,7 @@ function aiLocal_(code, baseUrl, prompt, image) {
   }
   if (r.status === 401) throw new Error('IBI Local — the access code saved on the server was refused. The CEO needs to re-enter it in ⚙ Settings.');
   if (r.status === 403) throw new Error('IBI Local — the laptop gateway refused this request.');
+  if (r.status === 524) throw new Error('IBI Local took over 100 seconds (the laptop is busy — often while a video is being encoded). Try again in a minute, or the CEO can switch engine.');
   if (r.status !== 200) throw new Error('IBI Local ' + r.status + ': ' + String(r.raw || '').slice(0, 200));
   const ch = r.data.choices && r.data.choices[0];
   const text = String((ch && ch.message && ch.message.content) || '').trim();
