@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script>if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v5.5</title>
+    <title>IBI File Re-Namer v5.6</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1099,7 +1099,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.5">v5.5</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.6">v5.6</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1299,7 +1299,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.5</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.6</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1403,7 +1403,7 @@
                     <div class="api-key-row">
                         <input type="password" id="localCodeInput" placeholder="the gateway access code" autocomplete="off" spellcheck="false">
                     </div>
-                    <p class="key-hint">Runs <strong>qwen3.5:9b</strong> on the office laptop — no per-scan cost, and no outside AI company sees the document (the page image passes through the company's own Google Drive script to reach the laptop). <strong>The laptop must be awake.</strong> Slower than the cloud engines and weaker on messy handwriting; if a scan comes back poor, switch back to Gemini.</p>
+                    <p class="key-hint">Runs <strong>Qwen 3.8 27B</strong> on the office laptop — no per-scan cost, and no outside AI company sees the document (the page image passes through the company's own Google Drive script to reach the laptop). <strong>The laptop must be awake.</strong> Very slow since 7 Oct 2026: about 4 to 5 minutes a page, which is longer than the Drive script and the laptop's internet link will wait, so most Local scans will stop with a time-out. If a scan times out or comes back poor, switch back to Gemini.</p>
                 </div>
             </div>
 
@@ -2082,7 +2082,9 @@ geminiScanBtn.addEventListener('click', async () => {
 // The laptop engine pays for every pixel: image tokens grow with the area, and an A4
 // page at 2x (1190x1684, ~1,960 tokens) took it past Cloudflare's 100 s limit on every
 // scan from 16 Sep to 6 Oct 2026. At 1280 px on the long side (~1,100 tokens) the
-// 9B reads an invoice in ~35 s. The cloud engines keep the sharper 2x page.
+// 9B read an invoice in ~35 s. Since 7 Oct 2026 the laptop's only model is the 27B
+// (~14 tok/s reading the image, ~1.2 tok/s writing): ~4-5 min a page, past both the
+// tunnel's 100 s and Apps Script's fetch limits. The cloud engines keep the sharper 2x page.
 const LOCAL_AI_MAX_SIDE = 1280;
 
 // Render a PDF page to a JPEG base64 string using PDF.js canvas rendering.
