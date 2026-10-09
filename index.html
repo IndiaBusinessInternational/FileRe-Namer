@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script>if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v5.6</title>
+    <title>IBI File Re-Namer v5.7</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1099,7 +1099,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.6">v5.6</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.7">v5.7</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1299,7 +1299,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.6</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.7</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1520,6 +1520,9 @@ const geminiScanStatus = $('geminiScanStatus');
 const invoiceDate = $('invoiceDate');
 const pickupDate = $('pickupDate');
 const pickupDateEdit = $('pickupDateEdit');
+// True once the user has picked a pickup date by hand. A date the user chose always
+// wins over one read from the PDF (or by AI) — e.g. Meesho orders held for tomorrow.
+let pickupChosen = false;
 const pickupHint = $('pickupHint');
 const typeInvoice = $('typeInvoice');
 const typeManifest = $('typeManifest');
@@ -3983,7 +3986,7 @@ async function processFile(file) {
         // Populate UI
         platform.value    = detectedPlatform;
         invoiceDate.value = detectedDate;
-        if (detectedPickup) pickupDate.value = detectedPickup;
+        if (detectedPickup && !pickupChosen) pickupDate.value = detectedPickup;
         pickupDateEdit.value = pickupDate.value;   // sync Step-4 editable field
         productName.value = detectedProduct;
         quantity.value    = detectedQty;
@@ -3992,7 +3995,7 @@ async function processFile(file) {
         // Amazon ship date lives in the shipping-label IMAGE and can't be read from text.
         // Flag it so we can auto-scan with Gemini (or hint the user to set it manually).
         const amazonShipMissing = (detectedPlatform === 'Amazon' && detectedType !== 'manifest' && !detectedPickup);
-        if (amazonShipMissing) {
+        if (amazonShipMissing && !pickupChosen) {
             pickupHint.textContent = '⚠ Amazon Ship Date is in the label image — using default. Click "Scan with AI" or edit above.';
             pickupHint.style.display = 'block';
         } else {
@@ -4072,7 +4075,7 @@ async function processFile(file) {
         // Amazon's ship date is in the label image; if a Gemini key is set and the ship
         // date wasn't found in text, read it (and verify product/qty/invoice date) from
         // the page image automatically.
-        if (amazonShipMissing && hasAiKey()) {
+        if (amazonShipMissing && !pickupChosen && hasAiKey()) {
             pickupHint.textContent = '⟳ Reading Ship Date from the label with AI…';
             pickupHint.style.display = 'block';
             pickupHint.style.color = '#3b82f6';
@@ -4452,15 +4455,82 @@ function escapeHtml(s) {
 
 // Keep the two pickup-date fields (Step 1 default + Step 4 editable) in sync.
 // pickupDate (Step 1) is the source of truth used by buildFileName and the GDrive folder.
+// Picking a date by hand makes it THE pickup date — for one file, a split sheet or a
+// whole queue — until Clear All.
 pickupDateEdit.addEventListener('input', () => {
     pickupDate.value = pickupDateEdit.value;
+    pickupChosen = !!pickupDate.value;
     pickupHint.style.display = 'none';
     updatePreview();
+    schedulePickupToBatch();
 });
 pickupDate.addEventListener('input', () => {
     pickupDateEdit.value = pickupDate.value;
+    pickupChosen = !!pickupDate.value;
     updatePreview();
+    schedulePickupToBatch();
 });
+
+/** The pickup ("D") date for a file: the user's pick first, then the PDF's, then Step 1. */
+function resolvePickup(fromPdf) {
+    if (pickupChosen && pickupDate.value) return pickupDate.value;
+    return fromPdf || pickupDate.value || todayStr();
+}
+
+// Typing a date into the picker fires once per digit, so wait for a pause.
+let pickupBatchTimer = null;
+function schedulePickupToBatch() {
+    clearTimeout(pickupBatchTimer);
+    pickupBatchTimer = setTimeout(applyPickupToBatch, 500);
+}
+
+/**
+ * Re-date the review queue to the pickup date just picked: the "D" date in every name
+ * AND the Drive folder each file goes to. Files already sent are left alone.
+ */
+async function applyPickupToBatch() {
+    const v = pickupDate.value;
+    if (!pickupChosen || !/^\d{4}-\d{2}-\d{2}$/.test(v) || parseInt(v, 10) < 2000) return;
+    if (!batch.items.length) return;
+    if (batch.busy) { schedulePickupToBatch(); return; }   // try again after the Drive check
+
+    const todo = batch.items.filter(it => it.doc && it.doc.pickupDate !== v &&
+        it.status !== 'done' && it.status !== 'error' && it.status !== 'uploading');
+    if (!todo.length) return;
+
+    const newTag = ' D ' + formatDateShort(v);
+    for (const it of todo) {
+        const oldTag = ' D ' + formatDateShort(it.doc.pickupDate);
+        it.doc.pickupDate = v;
+        if (it.edited) {
+            // Keep a name the user typed — swap only its "D" date.
+            const at = it.base.lastIndexOf(oldTag);
+            if (at >= 0) it.base = it.base.slice(0, at) + newTag + it.base.slice(at + oldTag.length);
+        } else {
+            it.base = baseNameFrom(it.doc);
+        }
+        // The numbering and the duplicate check belonged to the old date's folder.
+        it.ordinal = 1;
+        it.sameOrder = false;
+        it.elsewhere = null;
+        it.force = false;
+        if (it.status === 'duplicate') it.status = 'ready';
+        if (it.origNote !== undefined) it.note = it.origNote;
+        it.outName = nameWithOrdinal(it.base, it.doc.docType, 1);
+    }
+
+    const folder = 'Orders ' + inputDateToFolderDate(v);
+    batch.busy = true;
+    renderBatch();
+    if (getGasUrl()) {
+        setBatchStatus('⟳ Pickup date changed — checking Drive folder <strong>' + escapeHtml(folder) + '</strong>…', '');
+        await fetchBatchOrdinals();
+    }
+    batch.busy = false;
+    renderBatch();
+    setBatchStatus('✓ Pickup date set to <strong>' + escapeHtml(formatDateLong(v)) + '</strong> — every name now reads "' +
+        escapeHtml(newTag.trim()) + '" and will be saved in <strong>' + escapeHtml(folder) + '</strong>.', 'success');
+}
 
 // =================== BATCH QUEUE (2+ PDFs) ===================
 // One PDF keeps the original single-file form untouched. Two or more switch to this
@@ -4469,8 +4539,7 @@ pickupDate.addEventListener('input', () => {
 
 const batch = {
     items:    [],       // [{id, file, srcName, buffer, doc, order, fileHash, base, ordinal, outName, status, note}]
-    busy:     false,
-    defaults: { pickup: '' }
+    busy:     false
 };
 
 /** "…D 15 Jul 2nd Order" → "…D 15 Jul". Mirrors stripOrdinal() in the Apps Script. */
@@ -4544,7 +4613,7 @@ async function analyzeToItems(file, index) {
             // Each order page carries its own dates; fall back to the sheet's.
             const date = extractDate(p.text) || item.doc.invoiceDate;
             const year = parseInt(String(date).substring(0, 4), 10) || new Date().getFullYear();
-            const pickup = extractPickupDate(p.text, year) || item.doc.pickupDate;
+            const pickup = resolvePickup(extractPickupDate(p.text, year) || item.doc.pickupDate);
 
             let product = p.product;
             const cv = extractColorVariant(p.text);
@@ -4617,9 +4686,8 @@ async function analyzeFile(file, index) {
         const docType = detectDocType(fullText);
         const date    = extractDate(fullText) || todayStr();
         const year    = parseInt(date.substring(0, 4), 10) || new Date().getFullYear();
-        // No ship date in the PDF → fall back to whatever Step 1 is set to, exactly
-        // like the single-file form does.
-        const pickup  = extractPickupDate(fullText, year) || batch.defaults.pickup || todayStr();
+        // The date picked in Step 1 wins; otherwise the PDF's ship date; otherwise Step 1's default.
+        const pickup  = resolvePickup(extractPickupDate(fullText, year));
 
         const multi   = (docType !== 'manifest') ? detectMultiOrderPages(pageTexts) : null;
         const isMulti = !!(multi && multi.length >= 2);
@@ -4679,6 +4747,7 @@ async function fetchBatchOrdinals() {
     for (const [base, items] of groups) {
         let nextFree = null;
         for (const it of items) {
+            if (it.origNote === undefined) it.origNote = it.note || '';   // restored if the date changes
             const r = await lookupOrdinal(base, it);
 
             // Filed under another day already → flag it loudly and take it out of the
@@ -4820,6 +4889,7 @@ function renderBatch() {
             if (!/\.pdf$/i.test(v)) v += '.pdf';
             it.outName = sanitizeFileName(dropPdfExt(v)) + '.pdf';
             it.base = stripOrdinalName(dropPdfExt(it.outName));
+            it.edited = true;
             e.target.value = it.outName;
             autoGrow(e.target);
         });
@@ -4879,7 +4949,6 @@ function showBatchMode(on) {
 async function startBatch(files) {
     batch.items = [];
     batch.busy = true;
-    batch.defaults.pickup = pickupDate.value || todayStr();
     showBatchMode(true);
     hideStatus();
     setBatchStatus('⟳ Reading ' + files.length + ' PDFs…', '');
@@ -5191,6 +5260,7 @@ clearBtn.addEventListener('click', () => {
     invoiceDate.value = todayStr();
     pickupDate.value = todayStr();
     pickupDateEdit.value = todayStr();
+    pickupChosen = false;
     pickupHint.style.display = 'none';
 
     setDocType('invoice');
