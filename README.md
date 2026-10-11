@@ -1,6 +1,8 @@
-# IBI File Re-Namer v5.9
+# IBI File Re-Namer v5.91
 
-The AI engine the CEO picks in Settings applies to every device, and API keys / the Local AI code live only on the Drive Apps Script, never in a browser. The website and the Drive Apps Script normally carry the same version number; v5.6–v5.9 are website-only changes, so the Drive script stays v5.5 (nothing to paste — Settings shows a grey note only).
+The AI engine the CEO picks in Settings applies to every device, and API keys / the Local AI code live only on the Drive Apps Script, never in a browser. The website and the Drive Apps Script normally carry the same version number; v5.6–v5.91 are website-only changes, so the Drive script stays v5.5 (nothing to paste — Settings shows a grey note only).
+
+v5.91 (11 Oct 2026): long words on phones wrap at word boundaries (overflow-wrap break-word instead of anywhere (anywhere split button/label words mid-word on phones)).
 
 v5.9 (11 Oct 2026): **phones edge to edge** (640 px and narrower) — the card fills the screen width with no outer gutter, no rounded corners or side borders, 10 px inner side padding, and the page can never be wider than the screen. Tablets, laptops and the two-column desktop layout are unchanged. Website-only; the Drive script stays v5.5.
 
