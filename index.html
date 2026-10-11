@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script>if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v5.8</title>
+    <title>IBI File Re-Namer v5.9</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -872,8 +872,19 @@
 
         /* ========== MOBILE RESPONSIVE ========== */
         @media (max-width: 640px) {
+            /* v5.9 (CEO 11 Oct 2026): phones edge to edge — no outer gutter, full-bleed card,
+               10 px inner side padding (keeps letters off curved screen edges), never wider than
+               the screen (clip, not hidden, so the sticky top bar keeps working). */
+            html, body {
+                overflow-x: clip;
+            }
+
+            .app-card {
+                overflow-wrap: anywhere;
+            }
+
             .top-bar {
-                padding: 12px 16px;
+                padding: 12px 8px;
             }
 
             .version-tag {
@@ -898,13 +909,16 @@
             }
 
             .app-card {
-                width: 94%;
-                margin: 14px auto 20px;
-                border-radius: var(--radius-md);
+                width: 100%;
+                margin: 8px 0;
+                border-radius: 0;
+                border-left: 0;
+                border-right: 0;
+                box-shadow: none;
             }
 
             .card-header {
-                padding: 18px 20px;
+                padding: 18px 10px;
             }
 
             .card-header h1 {
@@ -916,15 +930,23 @@
             }
 
             .card-body {
-                padding: 20px 18px;
+                padding: 20px 10px;
             }
 
             .form-row.two-col {
-                grid-template-columns: 1fr;
+                grid-template-columns: minmax(0, 1fr);
             }
 
             .upload-zone {
-                padding: 24px 16px;
+                padding: 24px 10px;
+            }
+
+            .details-panel {
+                padding: 14px 10px;
+            }
+
+            .footer {
+                padding: 11px 10px;
             }
 
             .upload-icon {
@@ -943,7 +965,7 @@
 
             .filename-preview {
                 font-size: 14px;
-                padding: 14px 12px;
+                padding: 14px 10px;
             }
         }
 
@@ -1091,6 +1113,11 @@
         @media (max-width: 430px) {
             .modal-save-row button { width: 100%; padding: 12px 22px; }
         }
+        /* v5.9: phones — pop-ups use the screen width (spacing only; pinned Save row unchanged) */
+        @media (max-width: 640px) {
+            .modal-overlay { padding: 8px; }
+            .settings-modal { padding: 22px 12px 16px; }
+        }
         .modal-save-row button {
             padding: 9px 22px;
             background: var(--accent-color);
@@ -1154,7 +1181,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.8">v5.8</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.9">v5.9</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1369,7 +1396,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.8</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.9</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->

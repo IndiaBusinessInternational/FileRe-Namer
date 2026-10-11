@@ -1,6 +1,8 @@
-# IBI File Re-Namer v5.8
+# IBI File Re-Namer v5.9
 
-The AI engine the CEO picks in Settings applies to every device, and API keys / the Local AI code live only on the Drive Apps Script, never in a browser. The website and the Drive Apps Script normally carry the same version number; v5.6–v5.8 are website-only changes, so the Drive script stays v5.5 (nothing to paste — Settings shows a grey note only).
+The AI engine the CEO picks in Settings applies to every device, and API keys / the Local AI code live only on the Drive Apps Script, never in a browser. The website and the Drive Apps Script normally carry the same version number; v5.6–v5.9 are website-only changes, so the Drive script stays v5.5 (nothing to paste — Settings shows a grey note only).
+
+v5.9 (11 Oct 2026): **phones edge to edge** (640 px and narrower) — the card fills the screen width with no outer gutter, no rounded corners or side borders, 10 px inner side padding, and the page can never be wider than the screen. Tablets, laptops and the two-column desktop layout are unchanged. Website-only; the Drive script stays v5.5.
 
 v5.8 (9 Oct 2026): **two columns on laptop and desktop screens (1000 px and wider)** so the work fits one screen without scrolling. Left: pickup date, upload, split option, status. Right: the result — the new filename and Download / Send to GDrive / Clear All on one row at the top, the editable details below; or the review list with its three buttons on one row. A dashed "Your renamed files appear here" box holds the right side until a file is loaded. The top bar and logo band are slimmer on wide screens. Phones and narrow windows keep the single column in the original order.
 
