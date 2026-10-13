@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script>if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v5.91</title>
+    <title>IBI File Re-Namer v5.92</title>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="India Business International">
@@ -1181,7 +1181,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.91">v5.91</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.92">v5.92</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1396,7 +1396,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.91</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.92</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -4866,7 +4866,7 @@ async function fetchBatchOrdinals() {
                 it.ordinal  = r.ordinal;
                 it.sameOrder = true;
                 it.note = r.identical
-                    ? '♻ Already saved as <strong>' + escapeHtml(r.sameName || it.outName) + '</strong> — will be skipped, not duplicated.'
+                    ? '✓ Already safe in Drive as <strong>' + escapeHtml(r.sameName || it.outName) + '</strong> — sending again makes no second copy.'
                     : '♻ This order is already in Drive as <strong>' + escapeHtml(r.sameName || '') + '</strong> — you will be asked to replace it.';
             } else {
                 if (nextFree === null) nextFree = (r && r.ordinal) ? r.ordinal : 1;
@@ -4925,6 +4925,14 @@ function batchStatusIcon(s) {
  */
 function isSendable(it) {
     return it.status === 'ready' || (it.status === 'duplicate' && !!it.force);
+}
+
+/**
+ * Can this item be downloaded? Every renamed file, including ones already in Drive —
+ * staff still need the PDF to print. Only unreadable files and in-batch copies are out.
+ */
+function isDownloadable(it) {
+    return it.status !== 'error' && it.status !== 'parsing' && it.status !== 'uploading' && !it.batchDup;
 }
 
 function renderBatch() {
@@ -4992,9 +5000,8 @@ function renderBatch() {
         });
     });
 
-    const canAct = !batch.busy && batch.items.some(isSendable);
-    batchDownloadBtn.disabled = !canAct;
-    batchDriveBtn.disabled    = !canAct;
+    batchDownloadBtn.disabled = batch.busy || !batch.items.some(isDownloadable);
+    batchDriveBtn.disabled    = batch.busy || !batch.items.some(isSendable);
 
     const dupes = batch.items.filter(i => i.status === 'duplicate' && !i.force).length;
     batchDupeWarn.innerHTML = dupes
@@ -5078,6 +5085,7 @@ async function finishBatch() {
         if (it.status !== 'ready' || !it.fileHash) continue;
         if (seen.has(it.fileHash)) {
             it.status = 'skipped';
+            it.batchDup = true;
             it.note = '– Identical to an earlier file in this batch — skipped.';
         } else {
             seen.add(it.fileHash);
@@ -5105,7 +5113,7 @@ batchDownloadBtn.addEventListener('click', async () => {
     batch.busy = true; renderBatch();
     let n = 0;
     for (const it of batch.items) {
-        if (!isSendable(it)) continue;
+        if (!isDownloadable(it)) continue;
         try {
             const bytes = await itemBytes(it);
             const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
@@ -5133,7 +5141,7 @@ batchDriveBtn.addEventListener('click', async () => {
     batch.busy = true; renderBatch();
 
     driveFolders.clear();   // links belong to this run, not the previous one
-    let done = 0, skipped = 0, failed = 0;
+    let done = 0, skipped = 0, already = 0, failed = 0;
     for (const it of batch.items) {
         if (!isSendable(it)) continue;
         // An opted-in duplicate has already been shown where it lives, so go straight
@@ -5172,9 +5180,9 @@ batchDriveBtn.addEventListener('click', async () => {
             const links = driveLinks(res);
 
             if (res.identical) {
-                it.status = 'done'; skipped++;
+                it.status = 'done'; already++;
                 it.outName = res.filename || it.outName;
-                it.note = '♻ Already in Drive as <strong>' + escapeHtml(it.outName) + '</strong> — not duplicated.' + links;
+                it.note = '✓ Already safe in Drive as <strong>' + escapeHtml(it.outName) + '</strong> — saved earlier, so no second copy was made.' + links;
             } else if (res.opaque) {
                 it.status = 'done'; done++;
                 it.note = '⚠ Sent, but the browser blocked the confirmation — check the folder.' + links;
@@ -5196,14 +5204,22 @@ batchDriveBtn.addEventListener('click', async () => {
 
     batch.busy = false; renderBatch();
     const dupesLeft = batch.items.filter(i => i.status === 'duplicate' && !i.force).length;
-    const parts = [];
-    if (done)       parts.push(`saved ${done}`);
-    if (skipped)    parts.push(`skipped ${skipped} already-saved`);
-    if (dupesLeft)  parts.push(`left out ${dupesLeft} already saved in Drive`);
-    if (failed)     parts.push(`${failed} failed`);
-    setBatchStatus((failed ? '⚠ ' : '✓ ') + 'Batch finished — ' + (parts.join(' · ') || 'nothing to do') + '.'
-                   + batchFolderLinks(),
-                   failed ? 'error' : 'success');
+    // Already-in-Drive is a success (the file IS there), never a "skip" — staff read
+    // "skipped" as "it didn't work".
+    let msg;
+    if (!failed && !done && already && !skipped && !dupesLeft) {
+        msg = `✓ All done — ${already === 1 ? 'this file was' : `all ${already} files were`} already saved in Drive earlier, ` +
+              `so nothing new was needed. Download all still gives you the PDFs to print.`;
+    } else {
+        const parts = [];
+        if (done)       parts.push(`saved ${done} new`);
+        if (already)    parts.push(`${already} already in Drive (no second copy)`);
+        if (skipped)    parts.push(`skipped ${skipped} (you cancelled)`);
+        if (dupesLeft)  parts.push(`left out ${dupesLeft} already saved under another date`);
+        if (failed)     parts.push(`${failed} failed`);
+        msg = (failed ? '⚠ ' : '✓ ') + 'Finished — ' + (parts.join(' · ') || 'nothing to do') + '.';
+    }
+    setBatchStatus(msg + batchFolderLinks(), failed ? 'error' : 'success');
 });
 
 batchClearBtn.addEventListener('click', () => {
