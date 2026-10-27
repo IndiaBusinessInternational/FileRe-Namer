@@ -1,6 +1,8 @@
-# IBI File Re-Namer v5.92
+# IBI File Re-Namer v5.93
 
-The AI engine the CEO picks in Settings applies to every device, and API keys / the Local AI code live only on the Drive Apps Script, never in a browser. The website and the Drive Apps Script normally carry the same version number; v5.6–v5.92 are website-only changes, so the Drive script stays v5.5 (nothing to paste — Settings shows a grey note only).
+v5.93 (27 Oct 2026): WhatsApp link preview now shows the banner (og-banner.jpg, 1200x630 JPEG under 300 KB; the 323 KB PNG was too big) and a round **Share this app** button sits in the top bar. Website-only; the Drive script stays v5.5.
+
+The AI engine the CEO picks in Settings applies to every device, and API keys / the Local AI code live only on the Drive Apps Script, never in a browser. The website and the Drive Apps Script normally carry the same version number; v5.6–v5.93 are website-only changes, so the Drive script stays v5.5 (nothing to paste — Settings shows a grey note only).
 
 v5.92 (13 Oct 2026): sending a batch whose files are ALREADY in Drive now says so as a success ("✓ All done — all 2 files were already saved in Drive earlier") instead of "skipped 2 already-saved", which staff read as a failure. **Download all stays available after sending** (every renamed file except unreadable ones and in-batch copies), so the PDFs can still be printed; before, it greyed out once everything was sent.
 
