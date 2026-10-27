@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script>if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v5.93</title>
+    <title>IBI File Re-Namer v5.94</title>
     <script src="ibi-share.js" defer data-slot=".top-bar > div"></script>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
@@ -980,6 +980,20 @@
             }
         }
 
+        /* ========== v5.94 EDGE TO EDGE ON EVERY SCREEN ==========
+           Founder, 27 Oct 2026: "Yes, make all the apps edge to edge on laptop too". The 1280px centred
+           card (94% wide) is gone: the app card spans the whole screen on laptops and tablets too, with no
+           side border, radius or shadow and 10px inner sides; the top bar has 10px sides. The two columns
+           (inputs left, results right) simply get wider. Phones keep the v5.9 block above (top bar 8px). */
+        html, body { overflow-x: clip; }
+        .app-card { width: 100%; max-width: none; margin-left: 0; margin-right: 0; border-radius: 0; border-left: 0; border-right: 0; box-shadow: none; overflow-wrap: break-word; }
+        .app-card button, .app-card .btn, .app-card select, .app-card input { overflow-wrap: normal; }
+        .app-card > .card-header, .app-card > .card-body { padding-left: 10px; padding-right: 10px; }
+        .footer { padding-left: 10px; padding-right: 10px; }
+        @media (min-width: 641px) {
+            .top-bar { padding-left: 10px; padding-right: 10px; }
+        }
+
         /* ========== ACCESSIBILITY ========== */
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
@@ -1183,7 +1197,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.93">v5.93</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.94">v5.94</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1398,7 +1412,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.93</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.94</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
