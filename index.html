@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script>if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v5.95</title>
+    <title>IBI File Re-Namer v5.96</title>
     <script src="ibi-share.js" defer data-slot=".top-bar > div"></script>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
@@ -1308,6 +1308,8 @@
                                     <option value="ShopClues">ShopClues</option>
                                     <option value="JioMart">JioMart</option>
                                     <option value="IBI Website">IBI Website</option>
+                                    <option value="MyStore.in">MyStore.in</option>
+                                    <option value="IndiaMart">IndiaMart</option>
                                     <option value="Other">Other</option>
                                 </select>
                             </div>
@@ -1414,7 +1416,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.95</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.96</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -2144,7 +2146,7 @@ geminiScanBtn.addEventListener('click', async () => {
         }
         // Platform
         if (r.platform) {
-            const map = { amazon:'Amazon', flipkart:'Flipkart', shopsy:'Shopsy', meesho:'Meesho', shopclues:'ShopClues', jiomart:'JioMart', 'ibi website':'IBI Website' };
+            const map = { amazon:'Amazon', flipkart:'Flipkart', shopsy:'Shopsy', meesho:'Meesho', shopclues:'ShopClues', jiomart:'JioMart', 'ibi website':'IBI Website', mystore:'MyStore.in', 'mystore.in':'MyStore.in', indiamart:'IndiaMart' };
             const p = map[String(r.platform).toLowerCase()];
             if (p) { platform.value = p; applied.push(p); }
         }
@@ -2908,7 +2910,7 @@ function detectPlatform(text, filename) {
     const t = (text || '').toLowerCase();
     const fname = (filename || '').toLowerCase().replace(/\.[^.]+$/, '');
 
-    const scores = { Amazon: 0, Flipkart: 0, Shopsy: 0, Meesho: 0, ShopClues: 0, JioMart: 0, 'IBI Website': 0 };
+    const scores = { Amazon: 0, Flipkart: 0, Shopsy: 0, Meesho: 0, ShopClues: 0, JioMart: 0, 'IBI Website': 0, 'MyStore.in': 0, IndiaMart: 0 };
 
     // count helper — case-insensitive, global, capped to avoid runaway scores
     const count = (pattern, cap = 99) => {
@@ -2926,6 +2928,8 @@ function detectPlatform(text, filename) {
     scores.Meesho    += count('meesho', 5) * 120;
     scores.ShopClues += count('shopclues', 5) * 120;
     /* v5.95: JioMart prints its own name, a JM order id and a UEO898 invoice series. */
+    scores['MyStore.in'] += count('my\\s*store', 5) * 120;
+    scores.IndiaMart += count('india\\s*mart', 5) * 120;
     scores.JioMart   += count('jiomart', 5) * 120;
     scores.JioMart   += count('\\bjm[0-9a-f]{16,}\\b') * 100;
     scores.JioMart   += count('\\bs\\d{2}ueo898[a-z0-9]+') * 100;
@@ -3050,7 +3054,9 @@ function detectPlatform(text, filename) {
         // ShopClues
         { platform: 'ShopClues',re: /^shopclues[\s_\-]/i,                    weight: 80  },
         { platform: 'JioMart',  re: /jio\s*mart/i,                           weight: 100 },
-        { platform: 'IBI Website', re: /(?:^|[^a-z0-9])(?:inv-)?ibi\d{6,}/i,  weight: 120 }
+        { platform: 'IBI Website', re: /(?:^|[^a-z0-9])(?:inv-)?ibi\d{6,}/i,  weight: 120 },
+        { platform: 'MyStore.in', re: /my\s*store/i, weight: 100 },
+        { platform: 'IndiaMart', re: /india\s*mart/i, weight: 100 }
     ];
     for (const p of platformFilePatterns) {
         if (p.re.test(fname)) scores[p.platform] += p.weight;
@@ -3077,7 +3083,7 @@ function detectPlatform(text, filename) {
     //     "ordered through shopsy" (+220), or shopsy filename prefix (+100).
     //   - Meesho and ShopClues remain before Flipkart since they have completely
     //     different infrastructure signals and there's no cross-confusion.
-    const priority = ['JioMart', 'IBI Website', 'Meesho', 'ShopClues', 'Flipkart', 'Shopsy', 'Amazon'];
+    const priority = ['JioMart', 'IBI Website', 'MyStore.in', 'IndiaMart', 'Meesho', 'ShopClues', 'Flipkart', 'Shopsy', 'Amazon'];
     let winner = null, maxScore = 0;
     for (const p of priority) {
         if (scores[p] > maxScore) {
@@ -4162,7 +4168,7 @@ async function processFile(file) {
                         }
                         // Apply AI-detected platform (only if text detection was uncertain)
                         if (result.platform && !platform.value) {
-                            const map = { meesho: 'Meesho', amazon: 'Amazon', flipkart: 'Flipkart', shopsy: 'Shopsy', shopclues: 'ShopClues', jiomart: 'JioMart', 'ibi website': 'IBI Website' };
+                            const map = { meesho: 'Meesho', amazon: 'Amazon', flipkart: 'Flipkart', shopsy: 'Shopsy', shopclues: 'ShopClues', jiomart: 'JioMart', 'ibi website': 'IBI Website', mystore: 'MyStore.in', 'mystore.in': 'MyStore.in', indiamart: 'IndiaMart' };
                             const p = map[result.platform.toLowerCase()];
                             if (p) platform.value = p;
                         }

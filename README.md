@@ -1,4 +1,7 @@
-# IBI File Re-Namer v5.95
+# IBI File Re-Namer v5.96
+
+v5.96 (6 Nov 2026): MyStore.in and IndiaMart documents are recognised by name.
+
 
 v5.95 (6 Nov 2026): JioMart and IBI Website documents are recognised. IBI Website sheets are read on the Amazon model: shipping label + tax invoice, Ship Date from the label.
 
