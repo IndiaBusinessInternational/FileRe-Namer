@@ -1,4 +1,6 @@
-# IBI File Re-Namer v5.94
+# IBI File Re-Namer v5.95
+
+v5.95 (6 Nov 2026): JioMart and IBI Website documents are recognised. IBI Website sheets are read on the Amazon model: shipping label + tax invoice, Ship Date from the label.
 
 v5.94 (27 Oct 2026): edge to edge on every screen (Founder: "Yes, make all the apps edge to edge on laptop too, each with its own version bump."). The app card no longer sits in a centred 1280px box on laptops: it spans the whole screen with no side border, radius or shadow and 10px inner sides, the top bar has 10px sides, and the two columns (inputs left, results right) use the full width. `html, body { overflow-x: clip }` at every width. Phones unchanged. Website-only; the Drive script stays v5.5.
 

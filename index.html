@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script>if('serviceWorker' in navigator)window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
-    <title>IBI File Re-Namer v5.94</title>
+    <title>IBI File Re-Namer v5.95</title>
     <script src="ibi-share.js" defer data-slot=".top-bar > div"></script>
     <!-- Open Graph / social sharing -->
     <meta property="og:type" content="website">
@@ -1197,7 +1197,7 @@
     <header class="top-bar">
         <!-- The version badge IS the way in to Settings: tap it, enter the CEO PIN.
              Nothing on screen advertises that, which is the point. -->
-        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.94">v5.94</span>
+        <span class="version-tag" id="versionTag" role="button" tabindex="0" title="v5.95">v5.95</span>
         <div style="display:flex;align-items:center;gap:0;">
             <!-- Hidden until the CEO PIN is entered. Kept in the DOM (not removed) so the
                  existing settings code, and the two places that open Settings themselves,
@@ -1306,6 +1306,8 @@
                                     <option value="Shopsy">Shopsy</option>
                                     <option value="Meesho">Meesho</option>
                                     <option value="ShopClues">ShopClues</option>
+                                    <option value="JioMart">JioMart</option>
+                                    <option value="IBI Website">IBI Website</option>
                                     <option value="Other">Other</option>
                                 </select>
                             </div>
@@ -1412,7 +1414,7 @@
 
     <!-- ============== FOOTER ============== -->
     <footer class="footer">
-        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.94</strong>
+        © 2026 <strong>India Business International</strong> &middot; eCommerce for the World &middot; <strong>v5.95</strong>
     </footer>
 
     <!-- ============== GEMINI + GDRIVE SETTINGS MODAL ============== -->
@@ -1582,7 +1584,7 @@
 <script>
 /* =================================================================
    IBI FILE RE-NAMER v3.0
-   Robust PDF renaming for Amazon / Flipkart / Shopsy / Meesho / ShopClues
+   Robust PDF renaming for Amazon / Flipkart / Shopsy / Meesho / ShopClues / JioMart / IBI Website
    ================================================================= */
 
 // Set PDF.js worker
@@ -2142,7 +2144,7 @@ geminiScanBtn.addEventListener('click', async () => {
         }
         // Platform
         if (r.platform) {
-            const map = { amazon:'Amazon', flipkart:'Flipkart', shopsy:'Shopsy', meesho:'Meesho', shopclues:'ShopClues' };
+            const map = { amazon:'Amazon', flipkart:'Flipkart', shopsy:'Shopsy', meesho:'Meesho', shopclues:'ShopClues', jiomart:'JioMart', 'ibi website':'IBI Website' };
             const p = map[String(r.platform).toLowerCase()];
             if (p) { platform.value = p; applied.push(p); }
         }
@@ -2906,7 +2908,7 @@ function detectPlatform(text, filename) {
     const t = (text || '').toLowerCase();
     const fname = (filename || '').toLowerCase().replace(/\.[^.]+$/, '');
 
-    const scores = { Amazon: 0, Flipkart: 0, Shopsy: 0, Meesho: 0, ShopClues: 0 };
+    const scores = { Amazon: 0, Flipkart: 0, Shopsy: 0, Meesho: 0, ShopClues: 0, JioMart: 0, 'IBI Website': 0 };
 
     // count helper — case-insensitive, global, capped to avoid runaway scores
     const count = (pattern, cap = 99) => {
@@ -2923,6 +2925,15 @@ function detectPlatform(text, filename) {
     scores.Shopsy    += count('shopsy', 5) * 120;
     scores.Meesho    += count('meesho', 5) * 120;
     scores.ShopClues += count('shopclues', 5) * 120;
+    /* v5.95: JioMart prints its own name, a JM order id and a UEO898 invoice series. */
+    scores.JioMart   += count('jiomart', 5) * 120;
+    scores.JioMart   += count('\\bjm[0-9a-f]{16,}\\b') * 100;
+    scores.JioMart   += count('\\bs\\d{2}ueo898[a-z0-9]+') * 100;
+    /* v5.95: IBI Website sheets follow the Amazon model (label + tax invoice); the
+       seller name alone proves nothing, so only the order source and its ids count. */
+    scores['IBI Website'] += count('sold\\s+on\\s*:?\\s*www\\.indiabusinessinternational') * 220;
+    scores['IBI Website'] += count('\\binv-ibi\\d{6,}') * 120;
+    scores['IBI Website'] += count('order\\s*(?:id|number)\\s*:?\\s*ibi\\d{6,}') * 120;
 
     // ===== TIER 2: Corporate / legal entity names (very strong) =====
     // These appear on every legitimate invoice as the seller/operator entity.
@@ -3037,7 +3048,9 @@ function detectPlatform(text, filename) {
         // Shopsy — space/underscore/hyphen all valid separators
         { platform: 'Shopsy',   re: /^shopsy[\s_\-]/i,                       weight: 100 },
         // ShopClues
-        { platform: 'ShopClues',re: /^shopclues[\s_\-]/i,                    weight: 80  }
+        { platform: 'ShopClues',re: /^shopclues[\s_\-]/i,                    weight: 80  },
+        { platform: 'JioMart',  re: /jio\s*mart/i,                           weight: 100 },
+        { platform: 'IBI Website', re: /(?:^|[^a-z0-9])(?:inv-)?ibi\d{6,}/i,  weight: 120 }
     ];
     for (const p of platformFilePatterns) {
         if (p.re.test(fname)) scores[p.platform] += p.weight;
@@ -3064,7 +3077,7 @@ function detectPlatform(text, filename) {
     //     "ordered through shopsy" (+220), or shopsy filename prefix (+100).
     //   - Meesho and ShopClues remain before Flipkart since they have completely
     //     different infrastructure signals and there's no cross-confusion.
-    const priority = ['Meesho', 'ShopClues', 'Flipkart', 'Shopsy', 'Amazon'];
+    const priority = ['JioMart', 'IBI Website', 'Meesho', 'ShopClues', 'Flipkart', 'Shopsy', 'Amazon'];
     let winner = null, maxScore = 0;
     for (const p of priority) {
         if (scores[p] > maxScore) {
@@ -3601,6 +3614,8 @@ function stripTrailingAdjectives(core) {
 // The Product Name field stays editable, so the user can always fine-tune the result.
 function shortenProductName(raw, fullText) {
     if (!raw) return raw;
+    /* v5.95: JioMart's slip prints Shipment Weight; that is the parcel, never part of the product name. */
+    if (fullText) fullText = String(fullText).replace(/shipment\s+weight\s*:?\s*[\d.]+\s*(?:grams?|gms?|g|kgs?)\b/gi, ' ');
     let s = String(raw).replace(/\s+/g, ' ').trim();
 
     // Drop any "(...)" / "[...]" tail, then keep only the first segment before a hard
@@ -4107,9 +4122,9 @@ async function processFile(file) {
 
         // Amazon ship date lives in the shipping-label IMAGE and can't be read from text.
         // Flag it so we can auto-scan with Gemini (or hint the user to set it manually).
-        const amazonShipMissing = (detectedPlatform === 'Amazon' && detectedType !== 'manifest' && !detectedPickup);
+        const amazonShipMissing = ((detectedPlatform === 'Amazon' || detectedPlatform === 'IBI Website') && detectedType !== 'manifest' && !detectedPickup);
         if (amazonShipMissing && !pickupChosen) {
-            pickupHint.textContent = '⚠ Amazon Ship Date is in the label image — using default. Click "Scan with AI" or edit above.';
+            pickupHint.textContent = '⚠ ' + detectedPlatform + ' Ship Date is in the label image — using default. Click "Scan with AI" or edit above.';
             pickupHint.style.display = 'block';
         } else {
             pickupHint.style.display = 'none';
@@ -4147,7 +4162,7 @@ async function processFile(file) {
                         }
                         // Apply AI-detected platform (only if text detection was uncertain)
                         if (result.platform && !platform.value) {
-                            const map = { meesho: 'Meesho', amazon: 'Amazon', flipkart: 'Flipkart', shopsy: 'Shopsy', shopclues: 'ShopClues' };
+                            const map = { meesho: 'Meesho', amazon: 'Amazon', flipkart: 'Flipkart', shopsy: 'Shopsy', shopclues: 'ShopClues', jiomart: 'JioMart', 'ibi website': 'IBI Website' };
                             const p = map[result.platform.toLowerCase()];
                             if (p) platform.value = p;
                         }

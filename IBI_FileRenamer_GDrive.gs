@@ -1,5 +1,5 @@
 /**
- * IBI File Re-Namer — Google Drive Upload Endpoint  v5.5 (same number as the website)
+ * IBI File Re-Namer — Google Drive Upload Endpoint  v5.95 (same number as the website)
  * Google Apps Script (GAS) Web App
  *
  * ══════════════════════════════════════════════════════════════════════
@@ -135,7 +135,7 @@
  */
 
 // ─── CONFIG ────────────────────────────────────────────────────
-const APP_VERSION = '5.5';   // same number as the website's badge — moves with it every release
+const APP_VERSION = '5.95';   // same number as the website's badge — moves with it every release
 const ROOT_FOLDER_NAME = 'IBI Daily Orders';
 const KEEP_DAYS = 30;   // rolling retention: folders older than this many days are auto-deleted
 // ───────────────────────────────────────────────────────────────
@@ -644,7 +644,7 @@ Analyse the page carefully and return ONLY a valid JSON object with these fields
 {
   "orderCount": <integer — count data rows in the shipment table, NOT the header row. Look for S.No. column: 1, 2, 3... The highest S.No. number = orderCount>,
   "date": "<string — date in DD-MM-YYYY format from the 'Date :' label, e.g. 29-05-2026. Return null if not found>",
-  "platform": "<string — one of: Meesho, Amazon, Flipkart, Shopsy, ShopClues. Infer from the manifest format. Meesho manifests have 'Pickup Executive Signature', 'Free Size', and 14-digit AWB numbers. Return null if unknown>",
+  "platform": "<string — one of: Meesho, Amazon, Flipkart, Shopsy, ShopClues, JioMart, IBI Website. Infer from the manifest format. Meesho manifests have 'Pickup Executive Signature', 'Free Size', and 14-digit AWB numbers. Return null if unknown>",
   "courier": "<string — courier name from 'Courier :' label, e.g. Delhivery. Return null if not found>"
 }
 
@@ -655,7 +655,7 @@ Extract the details and return ONLY a valid JSON object (no markdown, no code fe
 
 {
   "docType": "invoice" or "manifest" — "manifest" if it is a multi-row pickup/handover list (Courier, S.No table); otherwise "invoice",
-  "platform": "Amazon" | "Flipkart" | "Shopsy" | "Meesho" | "ShopClues" | null,
+  "platform": "Amazon" | "Flipkart" | "Shopsy" | "Meesho" | "ShopClues" | "JioMart" | "IBI Website" | null,
   "product": "<core product name ONLY — keep material + type + head noun, REMOVE every marketing adjective (e.g. drop 'Anti-Slip', 'Natural', 'Premium', 'Coconut Fiber', 'Entrance', 'Welcome', 'Heavy Duty'). APPEND the size (Small/Medium/Large/XL) or dimensions (e.g. '60x40 cm', '11.5 L') whenever shown — prefer the size in the SKU. Example: 'Coir Door Mat Small'. No quantity words. null for manifests>",
   "quantity": <integer total quantity of the product, null if unknown>,
   "orderCount": <integer number of orders/shipment rows, only for manifests, else null>,
@@ -664,7 +664,7 @@ Extract the details and return ONLY a valid JSON object (no markdown, no code fe
   "colorVariant": "<color name if the product has a colour variant mentioned in the description, e.g. 'Navy Blue', 'Red', 'Dark Green'. null if not mentioned>"
 }
 
-Hints: Amazon invoice shows 'Amazon.in', ASIN like B0XXXXXXXX. Meesho shows 'Pickup Executive Signature', 'Free Size', 14-digit AWB. Flipkart/Shopsy show 'E-Kart Logistics', 'OD...' order ids and 'HBD'. ShopClues shows 'Powered by ShopClues.com', 'Ref:'. Count manifest rows by the S.No column. Return ONLY the JSON.`
+Hints: JioMart shows 'JioMart', an order id starting JM and an invoice number like S33UEO898GA00002, with invoice and Address Slip on separate pages. IBI Website follows the Amazon model: shipping label on the LEFT with 'Ship Date:' under the Order Id, Tax Invoice on the RIGHT, order id like IBI74360810, invoice INV-IBI74360810, and 'Sold on: www.indiabusinessinternational.online'; the seller name alone never means IBI Website. Amazon invoice shows 'Amazon.in', ASIN like B0XXXXXXXX. Meesho shows 'Pickup Executive Signature', 'Free Size', 14-digit AWB. Flipkart/Shopsy show 'E-Kart Logistics', 'OD...' order ids and 'HBD'. ShopClues shows 'Powered by ShopClues.com', 'Ref:'. Count manifest rows by the S.No column. Return ONLY the JSON.`
 };
 
 function listRecentFiles(days) {
